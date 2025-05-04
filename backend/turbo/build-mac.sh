@@ -1,0 +1,1 @@
+g++ -std=c++17 -o databaseplusplus databaseplusplus.cpp -lpthread

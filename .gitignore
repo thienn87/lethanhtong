@@ -1,0 +1,15 @@
+node_modules
+#vendor
+appstoreenv
+#dev.sqlite
+.DS_Store
+.idea
+.vscode
+.env.turbosify-dev-quan
+shopify.app.turbosify-dev-quan.toml
+frontend/package-lock.json
+frontend/yarn.lock
+#Thien's Folder  
+new_frontend
+.qodo
+frontend - Copy

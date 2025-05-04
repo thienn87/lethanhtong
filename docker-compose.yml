@@ -1,0 +1,107 @@
+version: '3.8'
+
+services:
+
+  nodejs:
+    image: node:22.2.0
+    container_name: nodejs_sockets_app
+    working_dir: /app
+    ports:
+      - 8000:3000
+    volumes:
+      - ./frontend/build:/app
+    command: npx serve -s /app
+    restart: unless-stopped
+    networks:
+      - app_network
+
+  api:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: LARAVEL_TURBOSIFYS
+    volumes:
+      - ./backend/:/var/www/html/
+    restart: unless-stopped
+    ports:
+      - 9000:9000
+    depends_on:
+      - postgres
+    environment:
+      DB_CONNECTION: pgsql
+      DB_HOST: postgres
+      DB_PORT: 5432
+      DB_DATABASE: lethanhtong_db
+      DB_USERNAME: root
+      DB_PASSWORD: 123
+    command: >
+      sh -c "
+        composer install &&
+        cp env .env &&
+        sed -i 's/DB_HOST=.*/DB_HOST=postgres/g' .env &&
+        php artisan key:generate &&
+        php artisan config:clear &&
+        php artisan config:cache &&
+        cd turbo && sh build-linux.sh && cd .. &&
+        php artisan serve --host=0.0.0.0 --port=9000
+      "
+    networks:
+      - app_network
+
+  queue:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: LARAVEL_QUEUES_WORKER
+    volumes:
+      - ./backend/:/var/www/html/
+    depends_on:
+      - postgres
+    environment:
+      DB_CONNECTION: pgsql
+      DB_HOST: postgres
+      DB_PORT: 5432
+      DB_DATABASE: lethanhtong_db
+      DB_USERNAME: root
+      DB_PASSWORD: 123
+    restart: unless-stopped
+    command: >
+      sh -c "
+        until PGPASSWORD=123 psql -h postgres -U root -d lethanhtong_db -c 'SELECT 1;'; do
+          echo 'PostgreSQL is unavailable - sleeping'
+          sleep 1
+        done
+        echo 'PostgreSQL is up - starting queue worker'
+        php artisan queue:work
+      "
+    networks:
+      - app_network
+
+  postgres:
+    image: postgres:17.4
+    container_name: postgres_db
+    environment:
+      POSTGRES_USER: root
+      POSTGRES_PASSWORD: 123
+      POSTGRES_DB: lethanhtong_db
+      POSTGRES_HOST_AUTH_METHOD: trust
+    ports:
+      - 5432:5432
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+      - ./postgresql-custom.conf:/etc/postgresql/postgresql.conf
+    command: postgres -c 'config_file=/etc/postgresql/postgresql.conf' -c 'listen_addresses=*'
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U root -d lethanhtong_db"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - app_network
+
+networks:
+  app_network:
+    driver: bridge
+volumes:
+  postgres_data:
