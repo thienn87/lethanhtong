@@ -21,13 +21,14 @@ class GradeController extends Controller
 
     public function create(Request $request)
     {
-        Grades::create([
+        $result = Grades::create([
             'grade' => $request->input('grade'),
             'name' => $request->input('name'),
             'tuition_group_ids' => $request->input('tuition_group_ids', []),
         ]);
         return response()->json([
-            'status' => true
+            'status' => true,
+            'message' => $result ? 'Khối đã được tạo hoặc cập nhật.' : 'Không thể tạo/cập nhật khối.'
         ]);
     }
 }

@@ -1,10 +1,9 @@
 import React from "react";
-import { useState, useCallback, useRef, useEffect } from "react";
-import { Link } from "react-router-dom";
+import { useState, useCallback } from "react";
 
 import { v4 as uuidv4 } from "uuid";
 import { format } from "date-fns";
-import { Card, Typography, IconButton, Button, Checkbox } from "@material-tailwind/react";
+import { Card, Typography, IconButton, Button } from "@material-tailwind/react";
 import { Config } from "../config";
 import TransactionStudentModal from "./transactionStudentModal";
 
@@ -318,7 +317,7 @@ const SearchStudent = ({ navigation }) => {
                     onChange={handleDiscountChange}
                     className="h-4 w-4 cursor-pointer"
                   />
-                  <label htmlFor="hasDiscount" className="cursor-pointer">
+                  <label htmlFor="hasDiscount" className="cursor-pointer ">
                     <b>Giảm học phí</b>
                   </label>
                 </div>

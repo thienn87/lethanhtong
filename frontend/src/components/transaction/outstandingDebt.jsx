@@ -7,7 +7,6 @@ import { AcademicCapIcon } from "@heroicons/react/24/outline";
 
 function OutstandingDebt() {
   const domain = Config();
-  const [loading, setLoading] = useState(false);
   const [toastMessage, setToastMessage] = useState("");
   const [showToast, setShowToast] = useState(false);
   
@@ -23,10 +22,6 @@ function OutstandingDebt() {
   
   // EventSource reference for SSE
   const eventSourceRef = useRef(null);
-
-  const currentMonth = new Date().getMonth() + 1;
-  const currentYear = new Date().getFullYear();
-
   const showToastMessage = (message) => {
     setToastMessage(message);
     setShowToast(true);

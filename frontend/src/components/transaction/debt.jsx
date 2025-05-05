@@ -297,7 +297,7 @@ export default function Debt() {
                   className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
                   value={keyword}
                   onChange={(e) => setKeyword(e.target.value)}
-                  placeholder="Nhập MSHS hoặc tên học sinh"
+                  placeholder="MSHS/Tên hs"
                 />
                 <span className="absolute right-3 top-2 text-gray-400">
                   <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
@@ -521,11 +521,6 @@ export default function Debt() {
           </div>
         )}
       </div>
-      
-      {/* Toast notification - updated to match the Toast component API */}
-      <Toast status={showToast}>
-        {toastMessage}
-      </Toast>
     </div>
   );
 }

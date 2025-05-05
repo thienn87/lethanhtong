@@ -1,4 +1,5 @@
-import { useState } from "react";
+
+import { useState, useEffect } from "react";
 import { Toast } from "../polaris/toast";
 import { Config } from "../config";
 import Select from "react-select";
@@ -6,24 +7,47 @@ import makeAnimated from "react-select/animated";
 
 function AddListGroupTuition() {
   const [loading, setLoading] = useState(false);
-  const [tuitionCode, setTuitionCode] = useState(null);
-  const [tuitionName, setTuitionName] = useState(null);
-  const [tuitionAmount, setTuitionAmount] = useState(null);
+  const [tuitionCode, setTuitionCode] = useState("");
+  const [tuitionName, setTuitionName] = useState("");
+  const [tuitionAmount, setTuitionAmount] = useState("");
   const [grade, setGrade] = useState(null);
   const [monthapply, setMonthapply] = useState(null);
   const [groupcode, setGroupcode] = useState(null);
+
+  // Enhanced status for better feedback
+  const [status, setStatus] = useState({ show: false, type: "", message: "" });
+  // Success state to show persistent success message
+  const [successMessage, setSuccessMessage] = useState("");
+  // Track if form was successfully submitted
+  const [formSubmitted, setFormSubmitted] = useState(false);
+
   const domain = Config();
-  // const [classes, setClasses] = useState(null);
-  // const [group, setGroup] = useState(null);
-  // const [apply_months, setApplyMonths] = useState(null);
+
+  // Reset form fields
+  const resetForm = () => {
+    setTuitionCode("");
+    setTuitionName("");
+    setTuitionAmount("");
+    setGrade(null);
+    setMonthapply(null);
+    setGroupcode(null);
+  };
 
   const submitCreateTuitionGroup = async () => {
-    if (!tuitionCode || !tuitionName || !tuitionAmount || !grade || !monthapply ||  !groupcode) {
-      alert("Vui lòng điền đầy đủ thông tin!");
-      setLoading(false);
+    if (!tuitionCode || !tuitionName || !tuitionAmount || !grade || !monthapply || !groupcode) {
+      setStatus({
+        show: true,
+        type: "error",
+        message: "Vui lòng điền đầy đủ thông tin!",
+      });
+      setTimeout(() => setStatus({ show: false, type: "", message: "" }), 3000);
       return;
     }
+    
     setLoading(true);
+    setStatus({ show: false, type: "", message: "" });
+    setSuccessMessage("");
+    
     try {
       const response = await fetch(
         `${domain}/api/tuitions/group/create`,
@@ -39,25 +63,53 @@ function AddListGroupTuition() {
             grade: grade,
             month_apply: monthapply,
             groupcode: groupcode,
-            // classes: classes,
-            // group: group,
-            // apply_months: apply_months,
           }),
         }
       );
 
       if (response.ok) {
         const data = await response.json();
-        console.warn("Sent from tuition-group/add.jsx", data);
+        // Set success message that will persist on the page
+        setSuccessMessage(`Tạo nhóm học phí "${tuitionName}" thành công!`);
+        setFormSubmitted(true);
+        
+        // Show toast notification
+        setStatus({
+          show: true,
+          type: "success",
+          message: "Tạo nhóm học phí thành công!",
+        });
+        
+        // Reset form for new entry
+        resetForm();
       } else {
-        throw new Error("Error sending form data");
+        const errorData = await response.json().catch(() => ({}));
+        setStatus({
+          show: true,
+          type: "error",
+          message: errorData?.message || "Có lỗi xảy ra khi gửi dữ liệu!",
+        });
       }
     } catch (error) {
-      console.error("Error:", error.message);
+      setStatus({
+        show: true,
+        type: "error",
+        message: "Lỗi kết nối hoặc máy chủ!",
+      });
     } finally {
+      setLoading(false);
+      // Hide toast after 3 seconds
+      setTimeout(() => setStatus({ show: false, type: "", message: "" }), 3000);
     }
-    setLoading(false);
   };
+
+  // Clear success message when starting a new form
+  useEffect(() => {
+    if (formSubmitted && (tuitionCode || tuitionName || tuitionAmount)) {
+      setSuccessMessage("");
+      setFormSubmitted(false);
+    }
+  }, [tuitionCode, tuitionName, tuitionAmount, formSubmitted]);
 
   const animatedComponents = makeAnimated();
   const monthsdropDownOptions = [
@@ -104,15 +156,29 @@ function AddListGroupTuition() {
     setGroupcode(selectedVal.value);
   };
   const gradeHandleSelectChange = (selectedVal) => {
-    let grades = selectedVal.map((item) => item.value); 
-    setGrade(grades.toString()); 
+    let grades = selectedVal.map((item) => item.value);
+    setGrade(grades.toString());
   };
-  
 
   return (
     <>
       <div className="grid gap-5 lg:gap-7.5">
         <div className="grid lg:grid-cols-1 gap-5 lg:gap-7.5 items-stretch">
+          {/* Success message section */}
+          {successMessage && (
+            <div className="card bg-success-light border-success">
+              <div className="card-body p-4">
+                <div className="flex items-center">
+                  <i className="ki-solid ki-check-circle text-success text-2xl mr-3"></i>
+                  <div>
+                    <h4 className="text-success font-medium">{successMessage}</h4>
+                    <p className="text-sm mt-1">Bạn có thể tiếp tục thêm nhóm học phí mới.</p>
+                  </div>
+                </div>
+              </div>
+            </div>
+          )}
+
           <div className="card min-w-full">
             <div className="card-header">
               <h3 className="card-title">
@@ -122,72 +188,67 @@ function AddListGroupTuition() {
 
             <div className="card-body">
               <div className="grid grid-cols-2 gap-8">
-                <div className="flex flex-col  gap-2">
-                  <label className="w-full font-bold text-sm">Mã học phí</label>
-                  <div className="input w-full ">
-                    <i className="ki-outline ki-magnifier"></i>
+                <div className="flex flex-col gap-2">
+                  <label className="w-full font-bold text-sm">Mã học phí <span className="text-danger">*</span></label>
+                  <div className="input w-full">
+                    <i className="ki-outline ki-code"></i>
                     <input
                       placeholder="Mã học phí"
                       required
                       type="text"
-                      defaultValue={tuitionCode}
-                      onBlur={(event) => setTuitionCode(event.target.value)}
+                      value={tuitionCode}
+                      onChange={(event) => setTuitionCode(event.target.value)}
                     />
                   </div>
                 </div>
-                <div className="flex flex-col  gap-2">
+                <div className="flex flex-col gap-2">
                   <label className="w-full font-bold text-sm">
-                    Tên học phí
+                    Tên học phí <span className="text-danger">*</span>
                   </label>
                   <div className="input">
-                    <i className="ki-outline ki-magnifier"></i>
+                    <i className="ki-outline ki-text"></i>
                     <input
                       placeholder="Tên học phí"
                       required
                       type="text"
-                      defaultValue={tuitionName}
-                      onBlur={(event) => setTuitionName(event.target.value)}
+                      value={tuitionName}
+                      onChange={(event) => setTuitionName(event.target.value)}
                     />
                   </div>
                 </div>
-                <div className="flex flex-col  gap-2">
+                <div className="flex flex-col gap-2">
                   <label className="w-full font-bold text-sm">
-                    Nhóm học phí
+                    Nhóm học phí <span className="text-danger">*</span>
                   </label>
                   <Select
                     label="Nhóm học phí"
                     required
-                    closeMenuOnSelect={false}
+                    closeMenuOnSelect={true}
                     components={animatedComponents}
                     options={groupdropDownOptions}
                     className="w-full text-sm"
                     onChange={groupHandleSelectChange}
+                    value={groupdropDownOptions.find(opt => opt.value === groupcode) || null}
+                    placeholder="Chọn nhóm học phí"
                   />
                 </div>
-                <div className="flex flex-col  gap-2">
-                  <label className="w-full font-bold text-sm">Số tiền</label>
+                <div className="flex flex-col gap-2">
+                  <label className="w-full font-bold text-sm">Số tiền <span className="text-danger">*</span></label>
                   <div className="input">
+                    <i className="ki-outline ki-dollar"></i>
                     <input
                       placeholder="Số tiền"
                       required
                       type="number"
-                      defaultValue={tuitionAmount}
-                      onBlur={(event) => setTuitionAmount(event.target.value)}
+                      value={tuitionAmount}
+                      onChange={(event) => setTuitionAmount(event.target.value)}
                     />
                   </div>
                 </div>
-                <div className="flex flex-col  gap-2">
+                <div className="flex flex-col gap-2">
                   <label className="w-full font-bold text-sm">
-                    Khối áp dụng
+                    Khối áp dụng <span className="text-danger">*</span>
                   </label>
-                  {/* <div className="input">
-                    <input
-                      placeholder="Áp dụng cho Khối"
-                      type="text"
-                      defaultValue={classes}
-                      onBlur={(event) => setClasses(event.target.value)}
-                    />
-                  </div> */}
                   <Select
                     label="Khối áp dụng"
                     required
@@ -197,11 +258,16 @@ function AddListGroupTuition() {
                     isMulti
                     className="w-full text-sm"
                     onChange={gradeHandleSelectChange}
+                    value={grade
+                      ? gradeDropDownOptions.filter(opt => grade.split(",").includes(opt.value))
+                      : []
+                    }
+                    placeholder="Chọn khối áp dụng"
                   />
                 </div>
-                <div className="flex flex-col  gap-2">
+                <div className="flex flex-col gap-2">
                   <label className="w-full font-bold text-sm">
-                    Tháng áp dụng
+                    Tháng áp dụng <span className="text-danger">*</span>
                   </label>
                   <Select
                     label="Tháng áp dụng"
@@ -212,25 +278,47 @@ function AddListGroupTuition() {
                     isMulti
                     className="w-full text-sm"
                     onChange={monthsHandleSelectChange}
+                    value={monthapply
+                      ? monthsdropDownOptions.filter(opt => monthapply.split(",").includes(opt.value))
+                      : []
+                    }
+                    placeholder="Chọn tháng áp dụng"
                   />
                 </div>
               </div>
             </div>
             <div className="card-footer">
-              <div className="flex justify-center">
-                <div
-                  onClick={() => submitCreateTuitionGroup()}
-                  className="mx-auto btn btn-sm btn-primary"
+              <div className="flex justify-center gap-3">
+                <button
+                  onClick={submitCreateTuitionGroup}
+                  className={`px-4 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-blue-500 flex items-center ${loading ? "opacity-60 cursor-not-allowed" : ""}`}
+                  disabled={loading}
+                  type="button"
                 >
-                  Thêm mới
-                </div>
+                  {loading ? (
+                    <>
+                      <span className="spinner-border spinner-border-sm mr-2"></span>
+                      Đang xử lý...
+                    </>
+                  ) : "Thêm mới"}
+                </button>
+                <button
+                  onClick={resetForm}
+                  className="px-4 py-2 bg-orange-400 text-white rounded-md hover:bg-orange-400 focus:outline-none focus:ring-2 focus:ring-blue-500 flex items-center"
+                  type="button"
+                  disabled={loading}
+                >
+                  Reset form
+                </button>
               </div>
             </div>
           </div>
         </div>
       </div>
 
-      <Toast status={loading}>Đang tải</Toast>
+      {/* Toast for loading */}
+      <Toast status={loading}>Đang tải...</Toast>
+      {/* Toast for status after create */}
     </>
   );
 }

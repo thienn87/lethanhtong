@@ -1,13 +1,24 @@
+
 import { useState } from 'react';
-import {Toast} from "../polaris/toast";
+import { Toast } from "../polaris/toast";
 import { Config } from "../config";
+
 function AddGrade() {
     const domain = Config();
     const [loading, setLoading] = useState(false);
-    const [tuitionCode,setTuitionCode] = useState(null);    
-    const [tuitionName,setTuitionName] = useState(null);
-    const submitCreateTuitionGroup = async () => {
-        setLoading(true)
+    const [grade, setGrade] = useState("");
+    const [name, setName] = useState("");
+    const [toast, setToast] = useState({ status: null, message: "", type: "success" });
+
+    const submitCreateGrade = async () => {
+        // Validate input
+        if (!grade || !name) {
+            setToast({ status: true, message: "Vui lòng nhập đầy đủ thông tin khối!", type: "error" });
+            return;
+        }
+        setLoading(true);
+        setToast({ status: null, message: "", type: "success" });
+
         try {
             const response = await fetch(`${domain}/api/grades/create`, {
                 method: 'POST',
@@ -15,23 +26,37 @@ function AddGrade() {
                     'Content-Type': 'application/json'
                 },
                 body: JSON.stringify({
-                    grade: tuitionCode,
-                    name: tuitionName
+                    grade: grade,
+                    name: name
                 }),
             });
 
-            if (response.ok) {
-                const data = await response.json();
-                console.log('Form data sent successfully:', data);
+            const data = await response.json();
+
+            if (response.ok && data.status) {
+                setToast({ status: true, message: "Tạo khối thành công!", type: "success" });
+                setGrade("");
+                setName("");
             } else {
-                throw new Error('Error sending form data');
+                // Handle duplicate or other backend errors
+                let errorMsg = data?.message || "Có lỗi xảy ra khi tạo khối!";
+                // Check for duplicate key error from backend
+                if (
+                    errorMsg.includes("duplicate key") ||
+                    errorMsg.includes("đã tồn tại") ||
+                    errorMsg.includes("Unique violation")
+                ) {
+                    errorMsg = "Khối này đã tồn tại!";
+                }
+                setToast({ status: true, message: errorMsg, type: "error" });
             }
         } catch (error) {
-            console.error('Error:', error.message);
+            setToast({ status: true, message: "Lỗi kết nối máy chủ!", type: "error" });
         } finally {
+            setLoading(false);
         }
-        setLoading(false)
     };
+
     return (
         <>
             <div className="grid gap-5 lg:gap-7.5">
@@ -39,41 +64,48 @@ function AddGrade() {
                     <div className="card min-w-full">
                         <div className="card-header">
                             <h3 className="card-title">
-                                Thêm mới khối 
+                                Thêm mới khối
                             </h3>
                         </div>
-
                         <div className="grid grid-cols-2 gap-2">
-                            <div class="p-4 flex gap-6">
-                                <div class="input">
-                                    <i class="ki-outline ki-magnifier"></i>
-                                    <input placeholder="Tên khối vd : 10" type="text" defaultValue={tuitionCode} onBlur={(event) => setTuitionCode(event.target.value)}/>
+                            <div className="p-4 flex gap-6">
+                                <div className="input">
+                                    <i className="ki-outline ki-magnifier"></i>
+                                    <input
+                                        placeholder="Tên khối vd : 10"
+                                        type="text"
+                                        value={grade}
+                                        onChange={(event) => setGrade(event.target.value)}
+                                    />
                                 </div>
                             </div>
-                            
-                            <div class="p-4 flex gap-6">
-                                <div class="input">
-                                    <i class="ki-outline ki-magnifier"></i>
-                                    <input placeholder="Mã khối vd : 10" type="text" defaultValue={tuitionName} onBlur={(event) => setTuitionName(event.target.value)}/>
+                            <div className="p-4 flex gap-6">
+                                <div className="input">
+                                    <i className="ki-outline ki-magnifier"></i>
+                                    <input
+                                        placeholder="Mã khối vd : 10"
+                                        type="text"
+                                        value={name}
+                                        onChange={(event) => setName(event.target.value)}
+                                    />
                                 </div>
                             </div>
-
                         </div>
                         <div className="p-4 flex">
-                            <div onClick={ () => submitCreateTuitionGroup()} class="mx-auto btn btn-primary flex justify-center">Thêm mới</div>
+                            <button
+                                onClick={submitCreateGrade}
+                                className={`mx-auto btn btn-primary bg-blue-600 flex justify-center ${loading ? "opacity-60 cursor-not-allowed" : ""}`}
+                                disabled={loading}
+                                type="button"
+                            >
+                                {loading ? "Đang xử lý..." : "Thêm mới"}
+                            </button>
                         </div>
-
-
                     </div>
                 </div>
-                
-
             </div>
-
-            <Toast status={loading}>Đang tải</Toast>
         </>
-    )
-  }
-  
-  export default AddGrade
-  
+    );
+}
+
+export default AddGrade;

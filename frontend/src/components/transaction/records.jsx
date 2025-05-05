@@ -11,7 +11,6 @@ import {
   DocumentTextIcon,
   UserIcon,
   CalendarIcon,
-  CurrencyDollarIcon
 } from "@heroicons/react/24/outline";
 import {
   Card,
@@ -26,16 +25,12 @@ import {
   Spinner,
   Tooltip,
   Chip,
-  Avatar,
-  Badge
 } from "@material-tailwind/react";
 
 import { format, parseISO } from "date-fns";
 import { vi } from "date-fns/locale";
 import { debounce } from "lodash";
-import * as XLSX from "xlsx";
 import { Toast } from "../polaris/toast";
-import { v4 as uuidv4 } from "uuid";
 import { Config } from "../config";
 import ReceiptDownload from "../apps/receipt";
 import DateRangeFilter from "../apps/datePicker";
@@ -675,6 +670,9 @@ function Records() {
           handler={() => setShowInvoiceDialog(false)}
           size="xl"
           className="p-3 w-[85%] !max-w-[1200px] bg-[#f8f9fa] rounded-[1rem] relative"
+          aria-modal="true"
+          aria-labelledby="dialog-title"
+          aria-describedby="dialog-desc"
         >
           <Button
             variant="text"

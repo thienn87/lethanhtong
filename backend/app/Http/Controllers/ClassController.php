@@ -52,17 +52,33 @@ class ClassController extends Controller
         ]);
     }
 
-    // Xóa lớp học
-    public function destroy($id)
+        
+    public function destroy(Request $request)
     {
-        $class = Classes::findOrFail($id);
+        $id = $request->query('id');
+        if (!$id) {
+            return response()->json([
+                'status' => false,
+                'message' => 'Thiếu ID lớp cần xóa.'
+            ], 400);
+        }
+
+        $class = Classes::find($id);
+        if (!$class) {
+            return response()->json([
+                'status' => false,
+                'message' => 'Không tìm thấy lớp.'
+            ], 404);
+        }
+
         $class->delete();
 
         return response()->json([
-            'status' => 'success',
-            'message' => 'Lớp học đã được xóa.',
+            'status' => true,
+            'message' => 'Lớp học đã được xóa.'
         ]);
     }
+
     /**
      * Get all classes for a specific grade
      *

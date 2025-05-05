@@ -377,17 +377,10 @@ function CreateStudent() {
                                     </label>
                                     <input
                                         className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-violet-500 focus:border-transparent transition"
-                                        {...register('phone_number', {
-                                            required: 'Vui lòng nhập số điện thoại',
-                                            pattern: {
-                                                value: /^[0-9]{10,11}$/,
-                                                message: 'Số điện thoại không hợp lệ'
-                                            }
-                                        })}
+                                        {...register('phone_number')}
                                         name="phone_number"
                                         placeholder="Nhập số điện thoại"
-                                        type="tel"
-                                        pattern="^[0-9]{10,11}$"
+                                        type="text"
                                         onChange={handleInputChange}
                                     />
                                     {errors.phone_number && <p className="mt-1 text-sm text-red-600">{errors.phone_number.message}</p>}

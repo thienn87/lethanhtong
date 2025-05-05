@@ -172,9 +172,7 @@ Route::prefix('tuitions')->group(function () {
 
     /** Get tuition details of a student GET : /api/tuitions **/
     Route::get('/', [TuitionController::class, 'getListTuition'])->name('tuitions.tuition');
-
-    /** Create/ update tuition balance of a student POST : /api/students/{id}/tuition-balance **/
-    Route::post('/create', [TuitionController::class, 'saveTuition'])->name('tuitions.saveTuition');
+    Route::post('/create', [TuitionController::class, 'saveTuition'])->name('tuitions.create');
 
     
 });
@@ -192,10 +190,13 @@ Route::prefix('grades')->group(function () {
 Route::prefix('classes')->group(function () {
     Route::get('/', [ClassController::class, 'index'])->name('classes.index');
     Route::post('/create', [ClassController::class, 'create'])->name('classes.create');
+    Route::get('/delete', [ClassController::class, 'destroy']);
      /** 
      * Refactored & tested
      * **/
     Route::get('/by-grade/{grade}', [ClassController::class, 'getClassesByGrade']);
+
+    
 }); 
 
 Route::prefix('transaction')->group(function () {

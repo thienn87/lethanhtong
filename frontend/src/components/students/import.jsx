@@ -196,7 +196,7 @@ function ImportStudents() {
       {/* Tab Navigation */}
       <div className="mb-6 flex border-b border-gray-200">
         <button
-          className={`py-3 px-6 font-medium text-sm focus:outline-none ${
+          className={`py-3 px-6 font-medium text-lg focus:outline-none ${
             activeTab === "import"
               ? "text-violet-700 border-b-2 border-violet-700"
               : "text-gray-500 hover:text-gray-700"
@@ -206,7 +206,7 @@ function ImportStudents() {
           Nhập mới học sinh
         </button>
         <button
-          className={`py-3 px-6 font-medium text-sm focus:outline-none ${
+          className={`py-3 px-6 font-medium text-lg focus:outline-none ${
             activeTab === "update"
               ? "text-blue-700 border-b-2 border-blue-700"
               : "text-gray-500 hover:text-gray-700"
