@@ -41,9 +41,7 @@ const TABLE_HEAD = [
 
 export default function Debt() {
   // Fix: Use a default API base URL if Config.domain is undefined
-  const domain = Config.domain || '';
-  const apiBaseUrl = domain || window.location.origin; // Fallback to current origin if domain is empty
-  
+  const domain = Config();
   const [isLoading, setIsLoading] = useState(false);
   const [isLoadingClasses, setIsLoadingClasses] = useState(false);
   const [error, setError] = useState(null);
@@ -102,7 +100,7 @@ export default function Debt() {
       setIsLoadingClasses(true);
       
       try {
-        const response = await fetch(`${apiBaseUrl}/api/classes/by-grade/${grade}`, {
+        const response = await fetch(`${domain}/api/classes/by-grade/${grade}`, {
           method: "GET",
           headers: {
             "Content-Type": "application/json",
@@ -142,7 +140,7 @@ export default function Debt() {
     };
     
     fetchClassOptions();
-  }, [grade, apiBaseUrl]);
+  }, [grade, domain]);
   
   // Handle grade change
   const handleGradeChange = (e) => {
@@ -167,7 +165,7 @@ export default function Debt() {
       queryParams.append("limit", limit);
       
       // Fix: Ensure we have a proper API URL
-      const apiUrl = `${apiBaseUrl}/api/transaction/student-debts/search?${queryParams.toString()}`;
+      const apiUrl = `${domain}/api/transaction/student-debts/search?${queryParams.toString()}`;
       console.log("Fetching from:", apiUrl); // Debug log
       
       const response = await fetch(apiUrl, {
@@ -195,7 +193,7 @@ export default function Debt() {
     } finally {
       setIsLoading(false);
     }
-  }, [apiBaseUrl, keyword, grade, className, year, month, page, limit]);
+  }, [domain, keyword, grade, className, year, month, page, limit]);
   
   // Initial data load and when dependencies change
   useEffect(() => {
