@@ -41,9 +41,13 @@ use App\Http\Controllers\StudentBalanceController;
 use App\Http\Controllers\TransactionFeeController;
 use App\Http\Controllers\SchoolYearController;
 use App\Http\Controllers\DashboardController;
+use App\Http\Controllers\InvoiceImportController;
 
-
+//Thêm invoices bằng excel
+Route::post('/import-invoices', [InvoiceImportController::class, 'import']);
+//tạo thông tin trang dashboard
 Route::get('/dashboard/stats', [DashboardController::class, 'getStats']);
+//Reset năm học
 Route::get('/school-year/create-new', [SchoolYearController::class, 'createNewSchoolYear']);
 Route::prefix('students')->group(function () {
 
