@@ -13,6 +13,14 @@ class Invoice extends Model
     //03 là tháng hiện tại
 
     //invoice_details: là tiêu đề hóa đơn, được nhập khi thu học phí
-    protected $fillable = ['transaction_id', 'invoice_details', 'invoice_id', 'mshs'];
+    protected $fillable = [
+        'transaction_id',
+        'invoice_details',
+        'invoice_id',
+        'mshs',
+        'created_at',
+        'year_month',
+        'status', // Added status field
+    ];
 
 }

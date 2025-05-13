@@ -82,37 +82,66 @@ function OutstandingDebt() {
   const handleImportInvoice = async (e) => {
     const file = e.target.files[0];
     if (!file) return;
-
+  
     setImporting(true);
     setImportResult(null);
     setImportProgress(10);
     setImportStatus('Đang đọc file Excel...');
     setImportErrors([]);
-
+  
     try {
       // Read Excel file
       const data = await file.arrayBuffer();
       const workbook = XLSX.read(data, { type: 'array' });
       const sheet = workbook.Sheets[workbook.SheetNames[0]];
       const rows = XLSX.utils.sheet_to_json(sheet, { defval: '' });
-
-      setImportProgress(30);
-      setImportStatus('Đang gửi dữ liệu đến máy chủ...');
-
-      // Send to backend for processing
-      const response = await axios.post(`${domain}/api/import-invoices`, { rows }, {
-        headers: { 'Content-Type': 'application/json' }
-      });
-
+  
+      // Split rows into batches of 100
+      const batchSize = 100;
+      const totalRows = rows.length;
+      const totalBatches = Math.ceil(totalRows / batchSize);
+  
+      let allErrors = [];
+      let totalSuccess = 0;
+  
+      setImportProgress(20);
+      setImportStatus(`Đang gửi dữ liệu đến máy chủ... (${totalBatches} đợt)`);
+  
+      for (let i = 0; i < totalBatches; i++) {
+        const batchRows = rows.slice(i * batchSize, (i + 1) * batchSize);
+  
+        setImportStatus(`Đang gửi đợt ${i + 1}/${totalBatches}...`);
+        setImportProgress(20 + Math.round(((i + 1) / totalBatches) * 70)); // 20-90%
+  
+        try {
+          const response = await axios.post(
+            `${domain}/api/import-invoices`,
+            { rows: batchRows },
+            { headers: { 'Content-Type': 'application/json' } }
+          );
+  
+          totalSuccess += response.data.successCount || 0;
+          if (response.data.errors && response.data.errors.length > 0) {
+            allErrors = allErrors.concat(response.data.errors);
+          }
+        } catch (err) {
+          // If the whole batch fails, record a generic error for this batch
+          allErrors.push(
+            `Lỗi khi gửi đợt ${i + 1}: ${err.response?.data?.error || err.message || 'Import failed'}`
+          );
+        }
+      }
+  
       setImportProgress(100);
       setImportStatus('Hoàn thành nhập liệu');
-      setImportResult(response.data);
-      
-      if (response.data.errors && response.data.errors.length > 0) {
-        setImportErrors(response.data.errors);
+      setImportResult({ successCount: totalSuccess, errors: allErrors });
+  
+      if (allErrors.length > 0) {
+        setImportErrors(allErrors);
+        showToastMessage(`Đã nhập ${totalSuccess} hóa đơn thành công, có ${allErrors.length} lỗi.`);
+      } else {
+        showToastMessage(`Đã nhập ${totalSuccess} hóa đơn thành công.`);
       }
-      
-      showToastMessage(`Đã nhập ${response.data.successCount} hóa đơn thành công.`);
     } catch (err) {
       setImportProgress(0);
       setImportStatus('Nhập liệu thất bại');

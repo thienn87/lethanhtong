@@ -6,9 +6,12 @@ use App\Models\TuitionGroup;
 use App\Models\Student;
 use App\Models\Transaction;
 use App\Models\Invoice;
+use Illuminate\Support\Facades\Cache;
 
 class SearchService
 {
+    // Cache TTL in seconds (5 minutes)
+    const CACHE_TTL = 300;
     public function search_invoice($request)
     {
         $mshs = $request->input('mshs');
@@ -94,116 +97,105 @@ class SearchService
     {   
         $mshs = $request->input('mshs');
         $hasDiscount = $request->boolean('hasDiscount', false);
-        
-        if (!empty($mshs)) {
-            $startTime = microtime(true);
-            $binaryPath = base_path('database/databaseplusplus');
-            $dbPath = base_path('database/database.sqlite');
-            $command = "$binaryPath $dbPath search students mshs $mshs";
-            $output = shell_exec($command);
-
-            $endTime = microtime(true);
-            $executionTime = $endTime - $startTime; // Thời gian thực thi trong giây
-
-            if ($output) {
-                $rows = explode("\n", trim($output)); // Tách theo dòng
-                $data = [];
-                foreach ($rows as $row) {
-                    $columns = explode("|", $row);
-                    $studentData = [
-                        'id' => $columns[0],
-                        'mshs' => $columns[1],
-                        'sur_name' => $columns[2],
-                        'name' => $columns[3],
-                        'full_name' => $columns[4],
-                        'day_of_birth' => $columns[5],
-                        'grade' => $columns[6],
-                        'class' => $columns[7],
-                        'gender' => $columns[8],
-                        'parent_name' => $columns[9],
-                        'address' => $columns[10],
-                        'phone_number' => $columns[11],
-                        'day_in' => $columns[12],
-                        'day_out' => $columns[13],
-                        'stay_in' => $columns[14],
-                        'leave_school' => $columns[15],
-                        'fail_grade' => $columns[16],
-                        'extra_fee' => $columns[17],
-                        'extra_fee_note' => $columns[18] === '' ? null : $columns[18],
-                        'discount' => $columns[19],
-                        'created_at' => $columns[20],
-                        'updated_at' => $columns[21],
-                        'performance (s)' => $executionTime
-                    ];
-                    
-                    // Apply discount filter if requested
-                    if ($hasDiscount) {
-                        if ((int)$columns[19] > 0) {
-                            $data[] = $studentData;
-                        }
-                    } else {
-                        $data[] = $studentData;
-                    }
-                }
-                return $data;
-            }
-            // Trả về lỗi nếu không có kết quả trả về
-            return null;
-        } 
-
-        $keyword = $this->removeVietnameseAccent(strtolower($request->input('keyword')));
-        $keyword = strtolower($keyword);
-
+        $keyword = $request->input('keyword');
         $class = $request->input('class');
         $grade = $request->input('grade');
         
-        // Base query with discount filter if needed
-        $baseQuery = Student::query();
-        if ($hasDiscount) {
-            $baseQuery->where('discount', '>', 0);
-        }
+        // Generate cache key based on search parameters
+        $cacheKey = "student_search_" . md5(json_encode([
+            'mshs' => $mshs,
+            'hasDiscount' => $hasDiscount,
+            'keyword' => $keyword,
+            'class' => $class,
+            'grade' => $grade
+        ]));
         
-        if (empty($class) && empty($grade)) {
-            $results = $baseQuery
-                ->where(function ($query) use ($keyword) {
-                    $query->whereRaw('LOWER(full_name) like ?', ['%' . $keyword . '%'])
-                          ->orWhere('mshs', 'like', '%' . $keyword . '%');
-                })
-                ->get();
-
-            if ($results->isNotEmpty()) {
-                return $results;
+        // Use cache tags if your driver supports it (Redis, Memcached)
+        // If using file driver, this will fall back to regular caching
+        $cache = Cache::supportsTags() ? Cache::tags(['student_search']) : Cache::store();
+        
+        return $cache->remember($cacheKey, self::CACHE_TTL, function() use ($mshs, $hasDiscount, $keyword, $class, $grade) {
+            // Build the base query with common conditions
+            $baseQuery = Student::query();
+            
+            // Apply discount filter if requested
+            if ($hasDiscount) {
+                $baseQuery->where('discount', '>', 0);
             }
-        } 
-        elseif (empty($class) && !empty($grade)) {
-            $results = $baseQuery
-                ->where('grade', $grade)
-                ->where(function ($query) use ($keyword) {
-                    $query->whereRaw('LOWER(full_name) like ?', ['%' . $keyword . '%']);
-                })
-                ->get();
-            return $results;
-        }
-        elseif (!empty($class) && empty($grade)) {
-            $results = $baseQuery
-                ->where('class', $class)
-                ->where(function ($query) use ($keyword) {
-                    $query->whereRaw('LOWER(full_name) like ?', ['%' . $keyword . '%']);
-                })
-                ->get();
-            return $results;
-        }
-        elseif (!empty($class) && !empty($grade)) {
-            $results = $baseQuery
-                ->where('grade', $grade)
-                ->where('class', $class)
-                ->where(function ($query) use ($keyword) {
-                    $query->whereRaw('LOWER(full_name) like ?', ['%' . $keyword . '%']);
-                })
-                ->get();
-            return $results;
-        }
-        return false; 
+            
+            // Search by student ID (mshs) - most efficient search
+            if (!empty($mshs)) {
+                return $baseQuery->where('mshs', $mshs)->get();
+            }
+            
+            // Process keyword for search
+            $cleanKeyword = '';
+            if (!empty($keyword)) {
+                $cleanKeyword = $this->removeVietnameseAccent(strtolower($keyword));
+            }
+            
+            // Apply filters based on provided parameters
+            if (empty($class) && empty($grade)) {
+                // Search by name or student ID
+                if (!empty($cleanKeyword)) {
+                    $baseQuery->where(function ($query) use ($keyword, $cleanKeyword) {
+                        // Search in full_name with original keyword
+                        $query->where('full_name', 'like', '%' . $keyword . '%')
+                            // Also search with accent-removed keyword
+                            ->orWhereRaw('LOWER(full_name) like ?', ['%' . $cleanKeyword . '%'])
+                            // Search in mshs
+                            ->orWhere('mshs', 'like', '%' . $keyword . '%');
+                    });
+                }
+                
+                return $baseQuery->limit(100)->get();
+            } 
+            elseif (empty($class) && !empty($grade)) {
+                // Search by grade and name/mshs
+                $baseQuery->where('grade', $grade);
+                
+                if (!empty($cleanKeyword)) {
+                    $baseQuery->where(function ($query) use ($keyword, $cleanKeyword) {
+                        $query->where('full_name', 'like', '%' . $keyword . '%')
+                            ->orWhereRaw('LOWER(full_name) like ?', ['%' . $cleanKeyword . '%'])
+                            ->orWhere('mshs', 'like', '%' . $keyword . '%');
+                    });
+                }
+                
+                return $baseQuery->get();
+            }
+            elseif (!empty($class) && empty($grade)) {
+                // Search by class and name/mshs
+                $baseQuery->where('class', $class);
+                
+                if (!empty($cleanKeyword)) {
+                    $baseQuery->where(function ($query) use ($keyword, $cleanKeyword) {
+                        $query->where('full_name', 'like', '%' . $keyword . '%')
+                            ->orWhereRaw('LOWER(full_name) like ?', ['%' . $cleanKeyword . '%'])
+                            ->orWhere('mshs', 'like', '%' . $keyword . '%');
+                    });
+                }
+                
+                return $baseQuery->get();
+            }
+            elseif (!empty($class) && !empty($grade)) {
+                // Search by both class, grade and name/mshs
+                $baseQuery->where('grade', $grade)
+                        ->where('class', $class);
+                
+                if (!empty($cleanKeyword)) {
+                    $baseQuery->where(function ($query) use ($keyword, $cleanKeyword) {
+                        $query->where('full_name', 'like', '%' . $keyword . '%')
+                            ->orWhereRaw('LOWER(full_name) like ?', ['%' . $cleanKeyword . '%'])
+                            ->orWhere('mshs', 'like', '%' . $keyword . '%');
+                    });
+                }
+                
+                return $baseQuery->get();
+            }
+            
+            return false;
+        });
     }
 
     public function Transaction($request)

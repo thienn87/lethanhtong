@@ -50,7 +50,6 @@ function App() {
 
           <Route path="lop" element={<ListClass />} />
           <Route path="lop/them-moi" element={<AddClass />} />
-
           <Route path="thu-hoc-phi" element={<ChargeTuition />} />
           <Route path="nhom-hoc-phi" element={<ListGroupTuition />} />
           <Route

@@ -176,9 +176,9 @@ class SchoolYearController extends Controller
                 if (is_numeric($currentGrade)) {
                     // If grade is 12, set to LT (Luyện thi)
                     if ((int)$currentGrade === 12) {
-                        $student->grade = 'LT';
-                    } else {
-                        // Otherwise increment by 1
+                        $student->grade = '13';
+                    } elseif ((int)$currentGrade !== 13) {
+                        // Otherwise increment by 1 if not already 13
                         $student->grade = (int)$currentGrade + 1;
                     }
                     $student->save();

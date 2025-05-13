@@ -22,6 +22,17 @@ use App\Services\OutstandingDebtService;
 class InvoiceController extends Controller
 {   
     private $outstandingDebtService;
+    private function ensureInvoicesPartitionExists($yearMonth)
+    {
+        $partitionName = 'invoices_' . str_replace('-', '_', $yearMonth);
+        $exists = DB::select("SELECT 1 FROM pg_class WHERE relname = ?", [$partitionName]);
+        if (empty($exists)) {
+            DB::statement("
+                CREATE TABLE IF NOT EXISTS {$partitionName} PARTITION OF invoices
+                FOR VALUES IN ('{$yearMonth}');
+            ");
+        }
+    }
 
     public function __construct(OutstandingDebtService $outstandingDebtService)
     {
@@ -46,6 +57,8 @@ class InvoiceController extends Controller
                 'transaction_data.*.code' => 'required|string',
                 'transaction_data.*.amount' => 'required|numeric',
                 'month' => 'nullable|integer|min:1|max:12',
+                'created_at' => 'nullable|date',
+                'status' => 'nullable|string|in:pending,completed,cancelled,refunded',
             ]);
 
             if ($validator->fails()) {
@@ -58,14 +71,36 @@ class InvoiceController extends Controller
 
             // Get validated data
             $data = $validator->validated();
+
+            // Determine created_at and year_month (Asia/Bangkok timezone)
+            if (!isset($data['created_at']) || !$data['created_at']) {
+                $createdAt = Carbon::now('Asia/Bangkok');
+            } else {
+                $createdAt = Carbon::parse($data['created_at'])->setTimezone('Asia/Bangkok');
+            }
+            $data['created_at'] = $createdAt;
+            $data['year_month'] = $createdAt->format('Y-m');
             
+            // Set default status if not provided
+            $data['status'] = $data['status'] ?? 'completed';
+
             // Create invoice using repository
             $invoiceRepository = new InvoiceRepository();
+            $this->ensureInvoicesPartitionExists($data['year_month']);
+            // Calculate total amount from transaction data
+            $totalAmount = array_sum(array_column($data['transaction_data'], 'amount'));
+            
             $invoice = $invoiceRepository->createInvoice([
                 'invoice_id' => $data['invoice_id'],
                 'mshs' => $data['mshs'],
                 'transaction_id' => $data['transaction_id'],
                 'invoice_details' => $data['invoice_details'],
+                'created_at' => $data['created_at'],
+                'year_month' => $data['year_month'],
+                'status' => $data['status'],
+                'total_amount' => $totalAmount,
+                'created_by' => auth()->id() ?? null,
+                'updated_by' => auth()->id() ?? null,
             ]);
 
             // Update student balance using the new method
@@ -113,9 +148,56 @@ class InvoiceController extends Controller
 
     public function delete(Request $request)
     {
+        // Validate inputs
+        $validator = Validator::make($request->all(), [
+            'id' => 'nullable|integer',
+            'invoice_id' => 'nullable|string|max:255',
+            'year' => 'nullable|integer|min:2000|max:2100',
+            'month' => 'nullable|integer|min:1|max:12',
+            'allowDeleteComplete' => 'nullable|boolean',
+        ]);
+
+        if ($validator->fails()) {
+            return response()->json([
+                'status' => 'error',
+                'message' => 'Validation failed',
+                'errors' => $validator->errors()
+            ], 422);
+        }
+
         $id = $request->input('id');
+        $invoiceId = $request->input('invoice_id');
+        $year = $request->input('year');
+        $month = $request->input('month');
+        $allowDeleteComplete = $request->input('allowDeleteComplete', false);
+        if ($allowDeleteComplete === null) {
+            $allowDeleteComplete = false;
+        }
+
+        // Default year and month to current if null
+        if ($year === null || $month === null) {
+            $now = now('Asia/Bangkok');
+            if ($year === null) {
+                $year = $now->year;
+            }
+            if ($month === null) {
+                $month = $now->month;
+            }
+        }
+
         $invoiceRepository = new InvoiceRepository();
-        $data = $invoiceRepository->deleteInvoice($id);
+
+        if ($id) {
+            $data = $invoiceRepository->deleteInvoice($id);
+        } elseif ($invoiceId) {
+            $data = $invoiceRepository->deleteInvoiceByYearMonthAndInvoiceId($year, $month, $invoiceId, $allowDeleteComplete);
+        } else {
+            return response()->json([
+                'status' => 'error',
+                'message' => 'Either id or invoice_id must be provided'
+            ], 400);
+        }
+
         return response()->json([
             'status' => 'success',
             'data' => $data
@@ -265,7 +347,8 @@ class InvoiceController extends Controller
                     'invoices.transaction_id',
                     'invoices.invoice_details',
                     'invoices.created_at'
-                );
+                )
+                ->where('status','=','completed');
             
             // Apply filters
             if ($startDate && $endDate) {
@@ -312,10 +395,18 @@ class InvoiceController extends Controller
                 $classDisplay = $this->formatClassDisplay($invoice->grade, $invoice->class);
                 
                 // Get transaction details
-                $transactionIds = explode(',', $invoice->transaction_id);
-                $transactions = DB::table('transactions')
-                                ->whereIn('id', $transactionIds)
-                                ->get();
+                $transactionIds = array_filter(
+                    array_map('trim', explode(',', $invoice->transaction_id)),
+                    function($id) { return $id !== ''; }
+                );
+                if (!empty($transactionIds)) {
+                    $transactions = DB::table('transactions')
+                        ->whereIn('id', $transactionIds)
+                        ->get();
+                } else {
+                    $transactions = collect(); // empty collection
+                }
+
                 $totalAmountPaid = $transactions->sum('amount_paid');
 
                 // Format transaction details as an array of objects
@@ -418,7 +509,8 @@ class InvoiceController extends Controller
                     'invoices.transaction_id', // Get transaction_id directly
                     'invoices.invoice_details',
                     'invoices.created_at'
-                );
+                )
+                ->where('status','=','completed');
             
             // Apply filters
             if ($startDate && $endDate) {
@@ -659,9 +751,47 @@ class InvoiceController extends Controller
             for ($i = $headerRow + 1; $i < $row; $i++) {
                 $sheet->getRowDimension($i)->setRowHeight(-1);
             }
-            
-            // Add signature rows
-            $row += 2; // Add some space
+            // Add this code to create a total row:
+            // Calculate total amount
+            $totalAmount = array_sum(array_column($invoiceData, 'total_amount'));
+
+            // Add a total row with adjusted column positions
+            $sheet->mergeCells('A' . $row . ':C' . $row); // Merge A, B, and C for empty space
+            $sheet->mergeCells('D' . $row . ':E' . $row); // Merge D and E for "TỔNG CỘNG:"
+            $sheet->setCellValue('D' . $row, 'TỔNG CỘNG:');
+            $sheet->mergeCells('F' . $row . ':G' . $row); // Merge F and G for the amount
+            $sheet->setCellValue('F' . $row, number_format($totalAmount) . ' VND');
+            $sheet->mergeCells('H' . $row . ':I' . $row); // Merge H and I for empty space
+
+            // Style the total row
+            $totalRowStyle = [
+                'font' => [
+                    'bold' => true,
+                    'size' => 14,
+                ],
+                'fill' => [
+                    'fillType' => Fill::FILL_SOLID,
+                    'startColor' => [
+                        'rgb' => 'FFEB9C', // Light yellow background
+                    ],
+                ],
+                'borders' => [
+                    'outline' => [
+                        'borderStyle' => Border::BORDER_MEDIUM,
+                    ],
+                ],
+            ];
+
+            // Apply the style to the entire row from A to I
+            $sheet->getStyle('A' . $row . ':I' . $row)->applyFromArray($totalRowStyle);
+            $sheet->getStyle('D' . $row)->getAlignment()->setHorizontal(Alignment::HORIZONTAL_RIGHT);
+            $sheet->getStyle('F' . $row)->getAlignment()->setHorizontal(Alignment::HORIZONTAL_RIGHT);
+
+            // Set the amount text color to red
+            $sheet->getStyle('F' . $row)->getFont()->getColor()->setRGB('FF0000'); // Red color
+
+            // Increment row for signature section
+            $row += 3; // Add more space before signatures
             
             $sheet->setCellValue('B' . $row, 'Người lập biểu');
             $sheet->setCellValue('E' . $row, 'Thủ quỷ');

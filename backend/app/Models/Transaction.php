@@ -12,12 +12,13 @@ class Transaction extends Model
     protected $fillable = [
         'student_name',
         'mshs',
-        'amount_paid',
         'paid_code',
+        'amount_paid',
         'payment_date',
         'note',
         'invoice_no',
-        'tuition_group_code', // thêm nếu cần dùng để join
+        'created_at',
+        'year_month', // <-- Add this line
     ];
 
     // Tự động append thuộc tính không có trong DB
@@ -26,8 +27,13 @@ class Transaction extends Model
     // Accessor để thêm thuộc tính tuition_name
     public function getTuitionNameAttribute()
     {
-        $tuitionGroup = TuitionGroup::where('code', $this->paid_code)->first();
-
-        return $tuitionGroup ? $tuitionGroup->name : null;
+        if($this->paid_code == 'OT'){
+             $tuitionGroupName = $this->note;
+        }
+        else{
+            $tuitionGroup = TuitionGroup::where('code', $this->paid_code)->first();
+             $tuitionGroupName = $tuitionGroup ? $tuitionGroup->name : "";
+        }
+        return $tuitionGroupName;
     }
 }

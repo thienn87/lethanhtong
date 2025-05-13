@@ -1,8 +1,10 @@
 <?php
 
 namespace App\Providers;
-
+use App\Observers\StudentObserver;
 use Illuminate\Support\ServiceProvider;
+use App\Models\Student;
+use Illuminate\Support\Facades\DB;
 
 class AppServiceProvider extends ServiceProvider
 {
@@ -17,8 +19,11 @@ class AppServiceProvider extends ServiceProvider
     /**
      * Bootstrap any application services.
      */
-    public function boot(): void
+
+    public function boot()
     {
-        //
+        // Register the Student observer
+        Student::observe(StudentObserver::class);
+        DB::statement("SET TIME ZONE 'Asia/Ho_Chi_Minh'");
     }
 }

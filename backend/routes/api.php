@@ -34,33 +34,44 @@ use App\Http\Controllers\InvoiceController;
 use App\Jobs\ExportInvoiceJob;
 use App\Exports\StudentsExport;
 use App\Jobs\ExportStudentsJob;
-use App\Jobs\ExportStudentsJobFilter;
+use App\Http\Controllers\StudentDebtController;
 use App\Http\Controllers\StudentImportController;
 use App\Http\Controllers\StudentUpdateController;
-use App\Http\Controllers\StudentBalanceController;
 use App\Http\Controllers\TransactionFeeController;
 use App\Http\Controllers\SchoolYearController;
 use App\Http\Controllers\DashboardController;
 use App\Http\Controllers\InvoiceImportController;
-
+use App\Http\Controllers\PaymentController;
 //Thêm invoices bằng excel
 Route::post('/import-invoices', [InvoiceImportController::class, 'import']);
 //tạo thông tin trang dashboard
 Route::get('/dashboard/stats', [DashboardController::class, 'getStats']);
-//Reset năm học
+//Reset năm họctuitiion_group
 Route::get('/school-year/create-new', [SchoolYearController::class, 'createNewSchoolYear']);
-Route::prefix('students')->group(function () {
+//Create bang du no hang thang POST: {"month": 1, "year": 2024}
+Route::post('/tuition-monthly-fee-listings/generate', [TuitionMonthlyFeeListingController::class, 'insertByMonthYear']);
+//Cập nhật số dư đầu kỳ theo tháng "year_month:2025-04"
+Route::post('/tuition-fee-listings/import-dudau', [TuitionMonthlyFeeListingController::class, 'importDudauFromExcel']);
+Route::get('/tuition-fee-listings/by-mshs', [TuitionMonthlyFeeListingController::class, 'getByMshs']);
 
+Route::prefix('payment')->group(function () {
+    Route::post('/process', [PaymentController::class, 'processPayment']);
+    Route::get('/receipt/{invoiceId}', [PaymentController::class, 'getPaymentReceipt']);
+});
+
+
+Route::prefix('students')->group(function () {
+    
+    
+    /**Export student data */
+    Route::get('/export/filter', [StudentController::class, 'exportStudents']);
     /** Get list of student GET : /api/students **/
     Route::get('/', [StudentController::class, 'get'])->name('students.index');
 
     /** Update information student POST /api/students/update **/
     Route::post('/update', [StudentController::class, 'update'])->name('students.update');
-    
-    Route::get('/student/balance', [StudentBalanceController::class, 'getBalance']);
-    Route::post('/student/balance/update', [StudentBalanceController::class, 'updateBalance']);
-    Route::get('/student/balances', [StudentBalanceController::class, 'getAllBalances']);
     Route::get('/all', [StudentController::class, 'getAllStudents']);
+    Route::get('/admission-form', [StudentController::class, 'createAdmissionForm']);
     Route::get('/export', function () {
 
         // Tạo tên file dựa trên ngày hiện tại
@@ -91,55 +102,6 @@ Route::prefix('students')->group(function () {
         ]);
     });
 
-    Route::get('/export/filter', function (Request $request) {
-        // Tạo tên file dựa trên ngày hiện tại
-        $fileName = 'students-filter-' . now()->format('Y-m-d') . '.csv';
-        
-        // Đường dẫn vật lý trong thư mục public
-        $filePath = public_path($fileName);
-        
-        // URL để trả về cho client
-        $fileUrl = config('app.url') . '/' . $fileName;
-    
-        // Lấy thông tin từ request
-        $keyword = $request->input('keyword');
-        $class = $request->input('class');
-        $grade = $request->input('grade');
-    
-        // Kiểm tra file đã tồn tại chưa
-        if (file_exists($filePath)) {
-            return response()->json([
-                'message' => 'Job are done',
-                'filter' => [$keyword, $class, $grade],
-                'filePath' => $fileUrl,
-            ]);
-        }
-    
-        // Sử dụng lock để tránh race condition
-        $lock = Cache::lock('export_students_filter_lock', 10); // Lock trong 10 giây
-    
-        if ($lock->get()) {
-            // Kiểm tra lại lần nữa sau khi có lock
-            if (!file_exists($filePath)) {
-                // Dispatch job với các tham số từ request
-                ExportStudentsJobFilter::dispatch($keyword, $class, $grade, $filePath);
-            }
-            $lock->release();
-    
-            return response()->json([
-                'message' => 'Export job has been queued successfully! Please wait',
-                'debug' => [$keyword, $class, $grade],
-                'filePath' => $fileUrl,
-            ]);
-        }
-    
-        // Nếu không lấy được lock (đang có job khác chạy)
-        return response()->json([
-            'message' => 'Another export is in progress, please try again later!',
-            'debug' => [$keyword, $class, $grade],
-            'filePath' => $fileUrl,
-        ]);
-    });
 
     /** Search student GET /api/students/search?mshs=29894 **/
     Route::get('/search', [StudentController::class, 'search'])->name('students.search');
@@ -224,8 +186,8 @@ Route::prefix('transaction')->group(function () {
     Route::get('/outstanding-debt', [TransactionController::class, 'outstandingDebt'])->name('transaction.outstandingDebt');
     Route::post('/outstanding-debt/export-to-old-data', [TransactionController::class, 'exportOutstandingDebt'])->name('transaction.exportOutstandingDebt');
     Route::get('/outstanding-debt/get-old-data', [TransactionController::class, 'getOldOutstandingDebt'])->name('transaction.getOldOutstandingDebt');
-    Route::post('/update-outstanding-debt-batch', [TransactionController::class, 'updateOutstandingDebtBatch']);
-    Route::get('/update-outstanding-debt-batch', [TransactionController::class, 'updateOutstandingDebtBatch']);
+    // Route::post('/update-outstanding-debt-batch', [TransactionController::class, 'updateOutstandingDebtBatch']);
+    // Route::get('/update-outstanding-debt-batch', [TransactionController::class, 'updateOutstandingDebtBatch']);
     Route::get('/detailed-balance', [TransactionController::class, 'getDetailedBalance']);
     Route::post('/update-student-balance', [TransactionController::class, 'updateStudentBalanceDetail']);
     Route::post('/update-all-student-balances', [TransactionController::class, 'updateAllStudentBalances']);
@@ -233,6 +195,9 @@ Route::prefix('transaction')->group(function () {
     Route::get('/fix-sequence', [TransactionController::class, 'fixSequence']);
 
 
+    //Tổng kết dư nợ hàng tháng
+    Route::get('/student-debts/search', [StudentDebtController::class, 'search']);
+    Route::get('/student-debts', [StudentDebtController::class, 'getStudentDetails']);
     /**
      *  Get : /api/transaction/outstanding-debt/single?mshs=30074
      * **/
@@ -248,7 +213,7 @@ Route::prefix('transaction')->group(function () {
 
     // New search endpoints
     Route::get('/outstanding-debt/search', [TransactionController::class, 'searchOutstandingDebt'])->name('transaction.searchOutstandingDebt');
-    Route::get('/student-debts/search', [TransactionController::class, 'searchStudentDebts'])->name('transaction.searchStudentDebts');
+    // Route::get('/student-debts/search', [TransactionController::class, 'searchStudentDebts'])->name('transaction.searchStudentDebts');
 
     /**
      *  post : /api/transaction/revert?mshs=29894&month=01&amount=20000
@@ -293,7 +258,7 @@ Route::prefix('invoice')->group(function () {
     Route::get('/search', [InvoiceController::class, 'search'])->name('InvoiceController.search');
     Route::post('/update', [InvoiceController::class, 'update'])->name('InvoiceController.update');
     Route::get('/get', [InvoiceController::class, 'get'])->name('InvoiceController.get');
-    // Route::post('/delete', [InvoiceController::class, 'delete'])->name('InvoiceController.delete');
+    Route::post('/delete', [InvoiceController::class, 'delete'])->name('InvoiceController.delete');
     Route::get('/filter', [InvoiceController::class, 'filter'])->name('InvoiceController.filter');
     Route::get('/download', function (Request $request) {
         // Lấy biến 'date' từ query string

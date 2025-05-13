@@ -1,5 +1,4 @@
 <?php
-
 namespace App\Http\Controllers;
 
 use Illuminate\Http\Request;
@@ -61,6 +60,10 @@ class InvoiceImportController extends Controller
                 continue;
             }
 
+            // Calculate year_month in UTC+7
+            $ngayctBangkok = Carbon::parse($ngayct)->setTimezone('Asia/Bangkok');
+            $yearMonth = $ngayctBangkok->format('Y-m');
+
             // Start a new transaction for each row
             DB::beginTransaction();
             
@@ -84,7 +87,7 @@ class InvoiceImportController extends Controller
                 $month = intval(date('n', strtotime($ngayct)));
                 
                 // Generate invoice_no
-                $invoice_no = $sct . '/' . $month;
+                $invoice_no = $sct . '/' . str_pad($month, 2, '0', STR_PAD_LEFT);
                 
                 // Track transaction data for balance update
                 $transactionData = [];
@@ -94,9 +97,10 @@ class InvoiceImportController extends Controller
                 foreach ($codes as $code) {
                     $amount = isset($row[$code]) ? floatval($row[$code]) : 0;
                     if ($amount > 0) {
-                        $paid_code = $code === 'LPNT' ? 'LPNT' : $code . $khoi;
+                        $paid_code = $code === 'LPNT' ? 'LPNT' : $code . str_pad($khoi, 2, '0', STR_PAD_LEFT);
                         
                         try {
+                            $this->ensureTransactionPartitionExists($yearMonth);
                             // Create the transaction
                             $transaction = Transaction::create([
                                 'student_name' => $fullname,
@@ -108,6 +112,7 @@ class InvoiceImportController extends Controller
                                 'invoice_no' => $invoice_no,
                                 'created_at' => $ngayct,
                                 'updated_at' => $ngayct,
+                                'year_month' => $yearMonth, // <-- Set partition key
                             ]);
                             
                             $createdTransactionIds[] = $transaction->id;
@@ -129,6 +134,8 @@ class InvoiceImportController extends Controller
                 // Create invoice if any transactions were created
                 if (count($createdTransactionIds) > 0) {
                     try {
+
+                        $this->ensureInvoicesPartitionExists($yearMonth);
                         Invoice::create([
                             'invoice_id' => $invoice_no,
                             'mshs' => $mahs,
@@ -136,10 +143,11 @@ class InvoiceImportController extends Controller
                             'invoice_details' => $ghichu,
                             'created_at' => $ngayct,
                             'updated_at' => $ngayct,
+                            'year_month' => $yearMonth, // <-- Set partition key
                         ]);
                         
                         // Update student balance using the updateBalanceAfterInvoice method
-                        $this->studentBalanceService->updateBalanceAfterInvoice($mahs, $transactionData, $month);
+                        // $this->studentBalanceService->updateBalanceAfterInvoice($mahs, $transactionData, $month);
                         
                         $successCount++;
                         DB::commit();
@@ -184,6 +192,28 @@ class InvoiceImportController extends Controller
             return Carbon::parse($dateString);
         } catch (Exception $e) {
             return null;
+        }
+    }
+    private function ensureTransactionPartitionExists($yearMonth)
+    {
+        $partitionName = 'transactions_' . str_replace('-', '_', $yearMonth);
+        $exists = DB::select("SELECT 1 FROM pg_class WHERE relname = ?", [$partitionName]);
+        if (empty($exists)) {
+            DB::statement("
+                CREATE TABLE IF NOT EXISTS {$partitionName} PARTITION OF transactions
+                FOR VALUES IN ('{$yearMonth}');
+            ");
+        }
+    }
+    private function ensureInvoicesPartitionExists($yearMonth)
+    {
+        $partitionName = 'invoices_' . str_replace('-', '_', $yearMonth);
+        $exists = DB::select("SELECT 1 FROM pg_class WHERE relname = ?", [$partitionName]);
+        if (empty($exists)) {
+            DB::statement("
+                CREATE TABLE IF NOT EXISTS {$partitionName} PARTITION OF invoices
+                FOR VALUES IN ('{$yearMonth}');
+            ");
         }
     }
 }

@@ -120,136 +120,129 @@ class TransactionController extends Controller
      * @param  \Illuminate\Http\Request  $request
      * @return \Illuminate\Http\JsonResponse
      */
-    public function updateOutstandingDebtBatch(Request $request)
-    {
-        $validator = Validator::make($request->all(), [
-            'month' => 'required|integer|min:1|max:12',
-        ]);
+    // public function updateOutstandingDebtBatch(Request $request)
+    // {
+    //     $validator = Validator::make($request->all(), [
+    //         'month' => 'required|integer|min:1|max:12',
+    //     ]);
 
-        if ($validator->fails()) {
-            return response()->json([
-                'status' => 'error',
-                'message' => $validator->errors()->first(),
-            ], 400);
-        }
+    //     if ($validator->fails()) {
+    //         return response()->json([
+    //             'status' => 'error',
+    //             'message' => $validator->errors()->first(),
+    //         ], 400);
+    //     }
 
-        $month = $request->input('month');
+    //     $month = $request->input('month');
         
-        try {
-            // Get all active students
-            $students = Student::where('leave_school', false)
-                ->where(function ($query) {
-                    $query->where('class', '!=', 'E30')
-                        ->where('class', '!=', 'A30')
-                        ->where('class', '!=', 'E35')
-                        ->where('class', '!=', 'B35')
-                        ->where('class', '!=', 'B30')
-                        ->where('class', '!=', 'A35')
-                        ->where('grade', '!=', 'LT');
-                })
-                ->select('id', 'mshs', 'name', 'sur_name', 'grade', 'class')
-                ->orderBy('grade')
-                ->orderBy('class')
-                ->get();
+    //     try {
+    //         // Get all active students
+    //         $students = Student::where('leave_school', false)
+    //             ->whereNotIn('class', ['E30', 'A30', 'E35', 'B35', 'B30', 'A35'])
+    //             ->where('grade', '!=', '13')
+    //             ->select('id', 'mshs', 'name', 'sur_name', 'grade', 'class')
+    //             ->orderBy('grade')
+    //             ->orderBy('class')
+    //             ->get();
                 
-            $totalStudents = $students->count();
+    //         $totalStudents = $students->count();
             
-            // Create a response stream for real-time updates
-            return response()->stream(function () use ($students, $month, $totalStudents) {
-                // Start output buffering
-                ob_start();
+    //         // Create a response stream for real-time updates
+    //         return response()->stream(function () use ($students, $month, $totalStudents) {
+    //             // Start output buffering
+    //             ob_start();
                 
-                // Send initial response
-                echo "event: start\n";
-                echo "data: " . json_encode([
-                    'status' => 'processing',
-                    'message' => "Starting to process $totalStudents students",
-                    'totalStudents' => $totalStudents
-                ]) . "\n\n";
+    //             // Send initial response
+    //             echo "event: start\n";
+    //             echo "data: " . json_encode([
+    //                 'status' => 'processing',
+    //                 'message' => "Starting to process $totalStudents students",
+    //                 'totalStudents' => $totalStudents
+    //             ]) . "\n\n";
                 
-                // Flush the buffer
-                ob_end_flush();
-                flush();
+    //             // Flush the buffer
+    //             ob_end_flush();
+    //             flush();
                 
-                $processedCount = 0;
-                $successCount = 0;
-                $errorCount = 0;
-                $batchSize = 10;
+    //             $processedCount = 0;
+    //             $successCount = 0;
+    //             $errorCount = 0;
+    //             $batchSize = 10;
                 
-                // Process students in batches
-                foreach ($students->chunk($batchSize) as $batch) {
-                    // Start output buffering for each batch
-                    ob_start();
+    //             // Process students in batches
+    //             foreach ($students->chunk($batchSize) as $batch) {
+    //                 // Start output buffering for each batch
+    //                 ob_start();
                     
-                    $batchResults = [];
+    //                 $batchResults = [];
                     
-                    foreach ($batch as $student) {
-                        $result = $this->processStudentDebt($student, $month);
-                        $batchResults[] = $result;
+    //                 foreach ($batch as $student) {
+    //                     $result = $this->processStudentDebt($student, $month);
+    //                     $batchResults[] = $result;
                         
-                        if ($result['success']) {
-                            // Only increment success count if records were actually updated (not skipped)
-                            if (!isset($result['skipped']) || !$result['skipped']) {
-                                $successCount += isset($result['count']) ? $result['count'] : 1;
-                            }
-                        } else {
-                            $errorCount++;
-                        }
+    //                     if ($result['success']) {
+    //                         // Only increment success count if records were actually updated (not skipped)
+    //                         if (!isset($result['skipped']) || !$result['skipped']) {
+    //                             $successCount += isset($result['count']) ? $result['count'] : 1;
+    //                         }
+    //                     } else {
+    //                         $errorCount++;
+    //                     }
                         
-                        $processedCount++;
+    //                     $processedCount++;
                         
-                        // Send progress update every student
-                        echo "event: progress\n";
-                        echo "data: " . json_encode([
-                            'status' => 'processing',
-                            'processedCount' => $processedCount,
-                            'totalStudents' => $totalStudents,
-                            'successCount' => $successCount,
-                            'errorCount' => $errorCount,
-                            'progress' => round(($processedCount / $totalStudents) * 100),
-                            'lastResult' => $result
-                        ]) . "\n\n";
-                    }
+    //                     // Send progress update every student
+    //                     echo "event: progress\n";
+    //                     echo "data: " . json_encode([
+    //                         'status' => 'processing',
+    //                         'processedCount' => $processedCount,
+    //                         'totalStudents' => $totalStudents,
+    //                         'successCount' => $successCount,
+    //                         'errorCount' => $errorCount,
+    //                         'progress' => round(($processedCount / $totalStudents) * 100),
+    //                         'lastResult' => $result
+    //                     ]) . "\n\n";
+    //                 }
                     
-                    // Flush the buffer for this batch
-                    ob_end_flush();
-                    flush();
+    //                 // Flush the buffer for this batch
+    //                 ob_end_flush();
+    //                 flush();
                     
-                    // Small delay between batches to prevent server overload
-                    usleep(100000); // 100ms
-                }
+    //                 // Small delay between batches to prevent server overload
+    //                 usleep(100000); // 100ms
+    //             }
                 
-                // Start output buffering for completion event
-                ob_start();
+    //             // Start output buffering for completion event
+    //             ob_start();
                 
-                // Send completion event
-                echo "event: complete\n";
-                echo "data: " . json_encode([
-                    'status' => 'completed',
-                    'message' => "Completed processing $totalStudents students",
-                    'processedCount' => $processedCount,
-                    'successCount' => $successCount,
-                    'errorCount' => $errorCount
-                ]) . "\n\n";
+    //             // Send completion event
+    //             echo "event: complete\n";
+    //             echo "data: " . json_encode([
+    //                 'status' => 'completed',
+    //                 'message' => "Completed processing $totalStudents students",
+    //                 'processedCount' => $processedCount,
+    //                 'successCount' => $successCount,
+    //                 'errorCount' => $errorCount
+    //             ]) . "\n\n";
                 
-                // Flush the final buffer
-                ob_end_flush();
-                flush();
+    //             // Flush the final buffer
+    //             ob_end_flush();
+    //             flush();
                 
-            }, 200, [
-                'Cache-Control' => 'no-cache',
-                'Content-Type' => 'text/event-stream',
-                'X-Accel-Buffering' => 'no', // Disable nginx buffering
-                'Connection' => 'keep-alive'
-            ]);
-        } catch (\Exception $e) {
-            Log::error('Error updating outstanding debt batch: ' . $e->getMessage());
-            return response()->json([
-                'status' => 'error',
-                'message' => 'Failed to update outstanding debt: ' . $e->getMessage(),
-            ], 500);
-        }
-    }
+    //         }, 200, [
+    //             'Cache-Control' => 'no-cache',
+    //             'Content-Type' => 'text/event-stream',
+    //             'X-Accel-Buffering' => 'no', // Disable nginx buffering
+    //             'Connection' => 'keep-alive'
+    //         ]);
+    //     } catch (\Exception $e) {
+    //         Log::error('Error updating outstanding debt batch: ' . $e->getMessage());
+    //         return response()->json([
+    //             'status' => 'error',
+    //             'message' => 'Failed to update outstanding debt: ' . $e->getMessage(),
+    //         ], 500);
+    //     }
+    // }
     public function index(Request $request)
     {   
         try {
@@ -512,13 +505,12 @@ class TransactionController extends Controller
             'data.*.paid_code' => 'required',
             'data.*.amount_paid' => 'required',
         ]);
-
-        if ($validator->fails()) {
-            return response()->json([
-                'status' => 'error',
-                'message' => $validator->errors()->first(),
-            ], 400);
+        if (!isset($data['created_at']) || !$data['created_at']) {
+            $createdAt = Carbon::now('Asia/Bangkok');
+        } else {
+            $createdAt = Carbon::parse($data['created_at'])->setTimezone('Asia/Bangkok');
         }
+        
 
         try {
             DB::beginTransaction();
@@ -528,6 +520,19 @@ class TransactionController extends Controller
             $affectedStudents = [];
             
             foreach ($data_loop as $data) {
+                if (!isset($data['created_at']) || !$data['created_at']) {
+                    $createdAt = Carbon::now('Asia/Bangkok');
+                } else {
+                    $createdAt = Carbon::parse($data['created_at'])->setTimezone('Asia/Bangkok');
+                }
+                $data['year_month'] = $createdAt->format('Y-m');
+                
+                if ($validator->fails()) {
+                    return response()->json([
+                        'status' => 'error',
+                        'message' => $validator->errors()->first(),
+                    ], 400);
+                }
                 $result = $this->transactionRepository->createTransaction($data);
                 $results[] = $result;
                 
@@ -616,18 +621,23 @@ class TransactionController extends Controller
             'paid_code' => 'required',
             'amount_paid' => 'required',
         ]);
-
+        
         if ($validator->fails()) {
             return response()->json([
                 'status' => 'error',
                 'message' => $validator->errors()->first(),
             ], 400);
         }
-
+        
         try {
             $data = $request->all();
             $data['amount_paid'] = is_numeric($request->amount_paid) ? $request->amount_paid : 0;
-
+            if (!isset($data['created_at']) || !$data['created_at']) {
+                $createdAt = Carbon::now('Asia/Bangkok');
+            } else {
+                $createdAt = Carbon::parse($data['created_at'])->setTimezone('Asia/Bangkok');
+            }
+            $data['year_month'] = $createdAt->format('Y-m');
             $status = $this->transactionRepository->createTransaction($data);
 
             // Clear cache for this student
@@ -653,17 +663,23 @@ class TransactionController extends Controller
             'paid_code' => 'required',
             'amount_paid' => 'required',
         ]);
-
+        
         if ($validator->fails()) {
             return response()->json([
                 'status' => 'error',
                 'message' => $validator->errors()->first(),
             ], 400);
         }
-
+        
         try {
             $data = $request->all();
             $data['amount_paid'] = is_numeric($request->amount_paid) ? $request->amount_paid : 0;
+            if (!isset($data['created_at']) || !$data['created_at']) {
+                $createdAt = Carbon::now('Asia/Bangkok');
+            } else {
+                $createdAt = Carbon::parse($data['created_at'])->setTimezone('Asia/Bangkok');
+            }
+            $data['year_month'] = $createdAt->format('Y-m');
 
             $result = $this->transactionRepository->createTransaction($data);
             
@@ -781,190 +797,6 @@ class TransactionController extends Controller
             ], 500);
         }
     }
-    /**
-     * Search for student debts with pagination and filtering
-     *
-     * @param  \Illuminate\Http\Request  $request
-     * @return \Illuminate\Http\JsonResponse
-     */
-    public function searchStudentDebts(Request $request)
-    {
-        try {
-            // Get search parameters with proper defaults
-            $keyword = trim($request->input('keyword', ''));
-            $grade = trim($request->input('grade', ''));
-            $className = trim($request->input('class', ''));
-            $year = (int)$request->input('year', Carbon::now()->year);
-            $month = (int)$request->input('month', Carbon::now()->month);
-            $page = max(1, (int)$request->input('page', 1)); // Ensure page is at least 1
-            $limit = min(100, max(10, (int)$request->input('limit', 50))); // Limit between 10 and 100
-            
-            // Calculate offset
-            $offset = ($page - 1) * $limit;
-            
-            // Cache key based on search parameters
-            $cacheKey = 'student_debts_search_' . md5(json_encode([
-                'page' => $page,
-                'limit' => $limit,
-                'keyword' => $keyword,
-                'grade' => $grade,
-                'class' => $className,
-                'year' => $year,
-                'month' => $month
-            ]));
-            
-            // Track this cache key for later clearing
-            $this->trackCacheKey('student_debts_search', $cacheKey);
-            
-            // Cache duration in minutes - shorter for frequently changing data
-            $cacheDuration = 3;
-            
-            // Get data from cache or execute query
-            $result = Cache::remember($cacheKey, $cacheDuration * 60, function () use ($offset, $limit, $keyword, $grade, $className, $year, $month, $page) {
-                // Build base query with only necessary columns for better performance
-                $query = DB::table('students')
-                    ->leftJoin('student_balance', 'students.mshs', '=', 'student_balance.mshs')
-                    ->where('students.leave_school', false)
-                    ->select(
-                        'students.mshs',
-                        'students.name',
-                        'students.sur_name',
-                        'students.grade',
-                        'students.class',
-                        'student_balance.balance',
-                        'student_balance.detail'
-                    );
-                    
-                // Apply filters
-                if (!empty($keyword)) {
-                    // Use a more efficient search pattern
-                    $cleanedKeyword = $this->searchService->removeVietnameseAccent(strtolower($keyword));
-                    
-                    $query->where(function($q) use ($keyword, $cleanedKeyword) {
-                        $q->where('students.mshs', 'like', "%{$keyword}%")
-                        ->orWhereRaw('LOWER(students.name) like ?', ["%{$cleanedKeyword}%"])
-                        ->orWhereRaw('LOWER(students.sur_name) like ?', ["%{$cleanedKeyword}%"])
-                        // Fix: Use PostgreSQL-compatible string concatenation with a space
-                        ->orWhereRaw("LOWER(CONCAT(students.sur_name, ' ', students.name)) like ?", ["%{$cleanedKeyword}%"]);
-                    });
-                }
-                
-                if (!empty($grade)) {
-                    $query->where('students.grade', $grade);
-                }
-                
-                if (!empty($className)) {
-                    $query->where('students.class', $className);
-                }
-                
-                // Count total records for pagination - use optimized count query
-                $totalCount = $query->count();
-                
-                // Get paginated results with efficient sorting
-                $students = $query
-                    ->orderBy('students.grade')
-                    ->orderBy('students.class')
-                    ->orderBy('students.name')
-                    ->offset($offset)
-                    ->limit($limit)
-                    ->get();
-                
-                // Collect all MSHS values for efficient transaction querying
-                $mshsValues = $students->pluck('mshs')->toArray();
-                
-                // Get all transactions for these students in the selected month/year in a single query
-                $transactions = DB::table('transactions')
-                    ->whereIn('mshs', $mshsValues)
-                    ->where('payment_date', $month) // payment_date is just the month number
-                    ->whereYear('created_at', $year) // Filter by year from created_at
-                    ->select('mshs', 'amount_paid')
-                    ->get();
-                
-                // Group transactions by MSHS for faster lookup
-                $transactionsByMshs = [];
-                foreach ($transactions as $transaction) {
-                    if (!isset($transactionsByMshs[$transaction->mshs])) {
-                        $transactionsByMshs[$transaction->mshs] = 0;
-                    }
-                    $transactionsByMshs[$transaction->mshs] += $transaction->amount_paid;
-                }
-                
-                // Process results to match the expected format in the frontend
-                $processedStudents = [];
-                foreach ($students as $student) {
-                    // Get paid amount for this student from the grouped transactions
-                    $paidAmount = isset($transactionsByMshs[$student->mshs]) ? $transactionsByMshs[$student->mshs] : 0;
-                    
-                    // Get student balance details
-                    $balanceDetail = json_decode($student->detail ?? '{}', true);
-                    
-                    // Calculate opening balance (previous month's balance)
-                    $openingBalance = 0;
-                    if (!empty($balanceDetail)) {
-                        // Try to get the opening balance from the detail
-                        if (isset($balanceDetail['by_code'])) {
-                            // Sum all code balances
-                            foreach ($balanceDetail['by_code'] as $codeBalance) {
-                                $openingBalance += (float)$codeBalance;
-                            }
-                        }
-                    }
-                    
-                    // Calculate monthly balance
-                    $monthlyBalance = $openingBalance - $paidAmount;
-                    
-                    // Calculate total balance (from student_balance table)
-                    $totalBalance = (float)($student->balance ?? 0);
-                    
-                    // Create a full name
-                    $fullName = trim($student->sur_name . ' ' . $student->name);
-                    
-                    // Add to processed results with the exact field names expected by the frontend
-                    $processedStudents[] = [
-                        'mshs' => $student->mshs,
-                        'ten' => $fullName,
-                        'khoi' => $student->grade,
-                        'lop' => $student->class,
-                        'du_cuoi_thang_truoc' => $openingBalance,
-                        'dathu' => $paidAmount,
-                        'du_cuoi_thang_nay' => $monthlyBalance,
-                        'tong_du_cuoi' => $totalBalance,
-                        'year' => $year,
-                        'month' => $month
-                    ];
-                }
-                
-                return [
-                    'data' => $processedStudents,
-                    'totalCount' => $totalCount,
-                    'page' => $page,
-                    'limit' => $limit,
-                    'totalPages' => ceil($totalCount / $limit)
-                ];
-            });
-            
-            // Log cache hit/miss for monitoring
-            $cacheHit = Cache::has($cacheKey);
-            Log::info("Student debts search cache " . ($cacheHit ? "hit" : "miss") . " for key: {$cacheKey}");
-            
-            return response()->json([
-                'success' => true,
-                'data' => $result['data'],
-                'totalCount' => $result['totalCount'],
-                'page' => $result['page'],
-                'limit' => $result['limit'],
-                'totalPages' => $result['totalPages']
-            ]);
-            
-        } catch (\Exception $error) {
-            Log::error('Error searching student debts: ' . $error->getMessage());
-            return response()->json([
-                'success' => false, 
-                'message' => 'Server error', 
-                'error' => $error->getMessage()
-            ], 500);
-        }
-    }
 
     
     /**
@@ -974,136 +806,142 @@ class TransactionController extends Controller
      * @param  int  $month
      * @return array
      */
-    private function processStudentDebt($student, $month)
-    {
-        try {
-            // Get student debt details using the OutstandingDebtService with the specified month
-            // Use caching for batch operations to improve performance
-            $cacheKey = 'outstanding_debt_single_' . $student->mshs . '_' . $month;
-            $cacheDuration = 5; // minutes
+    // private function processStudentDebt($student, $month)
+    // {
+    //     try {
+    //         // Get student debt details using the OutstandingDebtService with the specified month
+    //         // Use caching for batch operations to improve performance
+    //         $cacheKey = 'outstanding_debt_single_' . $student->mshs . '_' . $month;
+    //         $cacheDuration = 5; // minutes
             
-            $debtData = Cache::remember($cacheKey, $cacheDuration * 60, function () use ($student, $month) {
-                return $this->outstandingDebtService->single($student->mshs, $month);
-            });
+    //         $debtData = Cache::remember($cacheKey, $cacheDuration * 60, function () use ($student, $month) {
+    //             return $this->outstandingDebtService->single($student->mshs, $month);
+    //         });
             
-            if (!$debtData) {
-                return [
-                    'success' => false,
-                    'mshs' => $student->mshs,
-                    'name' => $student->sur_name . ' ' . $student->name,
-                    'message' => 'No debt data found'
-                ];
-            }
+    //         if (!$debtData) {
+    //             return [
+    //                 'success' => false,
+    //                 'mshs' => $student->mshs,
+    //                 'name' => $student->sur_name . ' ' . $student->name,
+    //                 'message' => 'No debt data found'
+    //             ];
+    //         }
             
-            // Check if da_thu is null or empty
-            $shouldCreateTransactions = !isset($debtData['da_thu']) || 
-                                    (is_array($debtData['da_thu']) && empty($debtData['da_thu']));
+    //         // Check if da_thu is null or empty
+    //         $shouldCreateTransactions = !isset($debtData['da_thu']) || 
+    //                                 (is_array($debtData['da_thu']) && empty($debtData['da_thu']));
             
-            // If da_thu is not empty, check if there are existing transactions for this month
-            if (!$shouldCreateTransactions) {
-                $existingTransactions = collect($debtData['da_thu'])->filter(function ($transaction) use ($month) {
-                    return (int)$transaction['payment_date'] === (int)$month;
-                });
+    //         // If da_thu is not empty, check if there are existing transactions for this month
+    //         if (!$shouldCreateTransactions) {
+    //             $existingTransactions = collect($debtData['da_thu'])->filter(function ($transaction) use ($month) {
+    //                 return (int)$transaction['payment_date'] === (int)$month;
+    //             });
                 
-                // If no transactions for this month, we should create them
-                $shouldCreateTransactions = $existingTransactions->isEmpty();
+    //             // If no transactions for this month, we should create them
+    //             $shouldCreateTransactions = $existingTransactions->isEmpty();
                 
-                // If there are transactions for this month, skip this student
-                if (!$shouldCreateTransactions) {
-                    return [
-                        'success' => true,
-                        'mshs' => $student->mshs,
-                        'name' => $student->sur_name . ' ' . $student->name,
-                        'message' => 'Student already has transactions for this month',
-                        'skipped' => true,
-                        'count' => 0 // No records were updated
-                    ];
-                }
-            }
+    //             // If there are transactions for this month, skip this student
+    //             if (!$shouldCreateTransactions) {
+    //                 return [
+    //                     'success' => true,
+    //                     'mshs' => $student->mshs,
+    //                     'name' => $student->sur_name . ' ' . $student->name,
+    //                     'message' => 'Student already has transactions for this month',
+    //                     'skipped' => true,
+    //                     'count' => 0 // No records were updated
+    //                 ];
+    //             }
+    //         }
             
-            // Get tuition items to create transactions for
-            $tuitionItems = [];
-            if (isset($debtData['chi_tiet_phai_thu_thang_nay']) && isset($debtData['chi_tiet_phai_thu_thang_nay']['tuition_apply'])) {
-                $tuitionItems = $debtData['chi_tiet_phai_thu_thang_nay']['tuition_apply'];
-            }
+    //         // Get tuition items to create transactions for
+    //         $tuitionItems = [];
+    //         if (isset($debtData['chi_tiet_phai_thu_thang_nay']) && isset($debtData['chi_tiet_phai_thu_thang_nay']['tuition_apply'])) {
+    //             $tuitionItems = $debtData['chi_tiet_phai_thu_thang_nay']['tuition_apply'];
+    //         }
             
-            if (empty($tuitionItems)) {
-                return [
-                    'success' => true,
-                    'mshs' => $student->mshs,
-                    'name' => $student->sur_name . ' ' . $student->name,
-                    'message' => 'No tuition items to update',
-                    'skipped' => true,
-                    'count' => 0 // No records were updated
-                ];
-            }
+    //         if (empty($tuitionItems)) {
+    //             return [
+    //                 'success' => true,
+    //                 'mshs' => $student->mshs,
+    //                 'name' => $student->sur_name . ' ' . $student->name,
+    //                 'message' => 'No tuition items to update',
+    //                 'skipped' => true,
+    //                 'count' => 0 // No records were updated
+    //             ];
+    //         }
             
-            // Create transactions for each tuition item
-            $createdCount = 0;
-            $errors = [];
-            $totalDebtAmount = 0;
+    //         // Create transactions for each tuition item
+    //         $createdCount = 0;
+    //         $errors = [];
+    //         $totalDebtAmount = 0;
+    //         if (!isset($data['created_at']) || !$data['created_at']) {
+    //             $createdAt = Carbon::now('Asia/Bangkok');
+    //         } else {
+    //             $createdAt = Carbon::parse($data['created_at'])->setTimezone('Asia/Bangkok');
+    //         }
+    //         $year_month = $createdAt->format('Y-m');
+    //         // Start a database transaction to ensure all operations succeed or fail together
+    //         DB::beginTransaction();
             
-            // Start a database transaction to ensure all operations succeed or fail together
-            DB::beginTransaction();
-            
-            try {
-                foreach ($tuitionItems as $item) {
-                    $amount_paid = 0 - $item['default_amount'];
-                    $totalDebtAmount += $item['default_amount'];
+    //         try {
+    //             foreach ($tuitionItems as $item) {
+    //                 $amount_paid = 0 - $item['default_amount'];
+    //                 $totalDebtAmount += $item['default_amount'];
                     
-                    $transactionData = [
-                        'mshs' => $student->mshs,
-                        'paid_code' => $item['code'],
-                        'amount_paid' => $amount_paid,
-                        'payment_date' => $month,
-                        'note' => "Cập nhật dư nợ tháng {$month}"
-                    ];
+    //                 $transactionData = [
+    //                     'mshs' => $student->mshs,
+    //                     'paid_code' => $item['code'],
+    //                     'amount_paid' => $amount_paid,
+    //                     'payment_date' => $month,
+    //                     'note' => "Cập nhật dư nợ tháng {$month}",
+    //                     'year_month'=> $year_month,
+    //                 ];
                     
-                    $this->transactionRepository->createTransaction($transactionData);
-                    $createdCount++;
-                }
+    //                 $this->transactionRepository->createTransaction($transactionData);
+    //                 $createdCount++;
+    //             }
                 
-                // Get the StudentBalanceService from the container
-                $studentBalanceService = app(StudentBalanceService::class);
+    //             // Get the StudentBalanceService from the container
+    //             $studentBalanceService = app(StudentBalanceService::class);
                 
-                // Update student balance for debt
-                $studentBalanceService->updateBalanceForDebt($student->mshs, $totalDebtAmount, $tuitionItems);
+    //             // Update student balance for debt
+    //             $studentBalanceService->updateBalanceForDebt($student->mshs, $totalDebtAmount, $tuitionItems);
                 
-                // Commit the transaction
-                DB::commit();
+    //             // Commit the transaction
+    //             DB::commit();
                 
-                return [
-                    'success' => true,
-                    'mshs' => $student->mshs,
-                    'name' => $student->sur_name . ' ' . $student->name,
-                    'message' => "Created {$createdCount} transactions and updated balance successfully",
-                    'count' => $createdCount, // Number of records updated
-                    'skipped' => false
-                ];
-            } catch (\Exception $e) {
-                // Roll back the transaction if anything fails
-                DB::rollBack();
+    //             return [
+    //                 'success' => true,
+    //                 'mshs' => $student->mshs,
+    //                 'name' => $student->sur_name . ' ' . $student->name,
+    //                 'message' => "Created {$createdCount} transactions and updated balance successfully",
+    //                 'count' => $createdCount, // Number of records updated
+    //                 'skipped' => false
+    //             ];
+    //         } catch (\Exception $e) {
+    //             // Roll back the transaction if anything fails
+    //             DB::rollBack();
                 
-                Log::error("Error creating transactions for student {$student->mshs}: " . $e->getMessage());
-                return [
-                    'success' => false,
-                    'mshs' => $student->mshs,
-                    'name' => $student->sur_name . ' ' . $student->name,
-                    'message' => "Error: " . $e->getMessage(),
-                    'count' => 0 // No records were updated
-                ];
-            }
-        } catch (\Exception $e) {
-            Log::error("Error processing debt for student {$student->mshs}: " . $e->getMessage());
-            return [
-                'success' => false,
-                'mshs' => $student->mshs,
-                'name' => $student->sur_name . ' ' . $student->name,
-                'message' => $e->getMessage(),
-                'count' => 0 // No records were updated
-            ];
-        }
-    }
+    //             Log::error("Error creating transactions for student {$student->mshs}: " . $e->getMessage());
+    //             return [
+    //                 'success' => false,
+    //                 'mshs' => $student->mshs,
+    //                 'name' => $student->sur_name . ' ' . $student->name,
+    //                 'message' => "Error: " . $e->getMessage(),
+    //                 'count' => 0 // No records were updated
+    //             ];
+    //         }
+    //     } catch (\Exception $e) {
+    //         Log::error("Error processing debt for student {$student->mshs}: " . $e->getMessage());
+    //         return [
+    //             'success' => false,
+    //             'mshs' => $student->mshs,
+    //             'name' => $student->sur_name . ' ' . $student->name,
+    //             'message' => $e->getMessage(),
+    //             'count' => 0 // No records were updated
+    //         ];
+    //     }
+    // }
     /**
      * Get detailed balance for a student
      *
@@ -1354,15 +1192,8 @@ class TransactionController extends Controller
         try {
             // Get all active students
             $students = Student::where('leave_school', false)
-                ->where(function ($query) {
-                    $query->where('class', '!=', 'E30')
-                        ->where('class', '!=', 'A30')
-                        ->where('class', '!=', 'E35')
-                        ->where('class', '!=', 'B35')
-                        ->where('class', '!=', 'B30')
-                        ->where('class', '!=', 'A35')
-                        ->where('grade', '!=', 'LT');
-                })
+                ->whereNotIn('class', ['E30', 'A30', 'E35', 'B35', 'B30', 'A35'])
+                ->where('grade', '!=', '13')
                 ->select('id', 'mshs', 'name', 'sur_name', 'grade', 'class', 'discount', 'stay_in')
                 ->get();
             

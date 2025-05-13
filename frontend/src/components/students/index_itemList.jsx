@@ -2,7 +2,7 @@ import { Spinner } from "../polaris/spinner";
 import { format } from "date-fns";
 import { Card, Typography, Button } from "@material-tailwind/react";
 
-export function ItemList({items,click,click2,next,prev, exportClick, loading}) {
+export function ItemList({ items, buttonName, click, click2, exportClick, loading, next, prev }) {
   if (!items) {
     return <div style={{width:"20px",margin:"auto"}}><Spinner/></div>
   } else {

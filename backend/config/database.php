@@ -76,6 +76,13 @@ return [
             'prefix_indexes' => true,
             'search_path' => 'public',
             'sslmode' => 'prefer',
+            // Performance optimizations
+            'options' => [
+                // Set statement timeout (in milliseconds)
+                PDO::ATTR_TIMEOUT => env('DB_PGSQL_STATEMENT_TIMEOUT', 30000),
+                // Disable prepared statements for better performance with simple queries
+                PDO::ATTR_EMULATE_PREPARES => true,
+            ],
         ],
 
         // Add a Docker-specific connection that always uses the service name
@@ -92,6 +99,13 @@ return [
             'prefix_indexes' => true,
             'search_path' => 'public',
             'sslmode' => 'prefer',
+            // Performance optimizations
+            'options' => [
+                // Set statement timeout (in milliseconds)
+                PDO::ATTR_TIMEOUT => env('DB_PGSQL_STATEMENT_TIMEOUT', 30000),
+                // Disable prepared statements for better performance with simple queries
+                PDO::ATTR_EMULATE_PREPARES => true,
+            ],
         ],
 
         'sqlsrv' => [

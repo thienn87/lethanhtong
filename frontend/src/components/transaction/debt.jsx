@@ -8,7 +8,7 @@ import * as XLSX from "xlsx";
 const formatCurrency = (value, showSymbol = true) => {
   // Handle null, undefined or empty string
   if (value === null || value === undefined || value === '') {
-    return '0 ₫';
+    return '0';
   }
   
   // Convert to number if it's a string
@@ -16,15 +16,15 @@ const formatCurrency = (value, showSymbol = true) => {
   
   // Format with thousand separators
   try {
+    // Use Intl.NumberFormat but without the currency style to avoid the đ symbol
     return new Intl.NumberFormat('vi-VN', {
-      style: showSymbol ? 'currency' : 'decimal',
-      currency: 'VND',
+      style: 'decimal', // Use decimal instead of currency
       minimumFractionDigits: 0,
       maximumFractionDigits: 0
     }).format(numValue);
   } catch (error) {
     // Fallback formatting if Intl.NumberFormat fails
-    return showSymbol ? `${numValue.toLocaleString()} ₫` : numValue.toLocaleString();
+    return numValue.toLocaleString();
   }
 };
 
@@ -67,6 +67,14 @@ export default function Debt() {
   // Data
   const [students, setStudents] = useState([]);
   const [classOptions, setClassOptions] = useState([]);
+  
+  // Add the missing summary state
+  const [summaryData, setSummary] = useState({
+    totalPreviousBalance: 0,
+    totalPaid: 0,
+    totalCurrentBalance: 0,
+    totalBalance: 0
+  });
   
   // Options for dropdowns
   const gradeOptions = ["6", "7", "8", "9", "10", "11", "12"];
@@ -150,10 +158,10 @@ export default function Debt() {
   };
   
   // Fetch data with debounce
+  // Update the fetchData function in debt.jsx
   const fetchData = useCallback(async () => {
     setIsLoading(true);
     setError(null);
-    
     try {
       const queryParams = new URLSearchParams();
       if (keyword) queryParams.append("keyword", keyword);
@@ -182,6 +190,14 @@ export default function Debt() {
         setStudents(result.data || []);
         setTotalCount(result.totalCount || 0);
         setTotalPages(result.totalPages || 1);
+        
+        // Set summary data from the API response
+        setSummary({
+          totalPreviousBalance: result.totals?.du_cuoi_thang_truoc || 0,
+          totalPaid: result.totals?.dathu || 0,
+          totalCurrentBalance: result.totals?.du_cuoi_thang_nay || 0,
+          totalBalance: result.totals?.tong_du_cuoi || 0
+        });
       } else {
         setError(result.message || "Failed to fetch data");
         showToastMessage(result.message || "Failed to fetch data");
@@ -227,7 +243,7 @@ export default function Debt() {
     setTimeout(() => setShowToast(false), 3000);
   };
   
-  // Export to Excel
+  // Update the exportToExcel function to use the API endpoint
   const exportToExcel = () => {
     try {
       if (students.length === 0) {
@@ -235,50 +251,33 @@ export default function Debt() {
         return;
       }
       
-      // Format data for export
-      const exportData = students.map((student) => ({
-        "MSHS": student.mshs,
-        "Họ và tên": student.ten,
-        "Khối": student.khoi,
-        "Lớp": student.lop,
-        "Dư cuối tháng trước": formatCurrency(student.du_cuoi_thang_truoc),
-        "Đã thu": formatCurrency(student.dathu),
-        "Dư cuối tháng này": formatCurrency(student.du_cuoi_thang_nay),
-        "Tổng dư cuối": formatCurrency(student.tong_du_cuoi)
-      }));
+      // Create query parameters for export
+      const queryParams = new URLSearchParams();
+      if (keyword) queryParams.append("keyword", keyword);
+      if (grade) queryParams.append("grade", grade);
+      if (className) queryParams.append("class", className);
+      queryParams.append("year", year);
+      queryParams.append("month", month);
+      queryParams.append("export", true); // Add export flag
       
-      const worksheet = XLSX.utils.json_to_sheet(exportData);
-      const workbook = XLSX.utils.book_new();
-      XLSX.utils.book_append_sheet(workbook, worksheet, "Student Debts");
+      // Create the export URL
+      const exportUrl = `${domain}/api/transaction/student-debts/search?${queryParams.toString()}`;
       
-      // Generate filename with current date
-      const fileName = `student_debts_${month}_${year}_${new Date().toISOString().slice(0, 10)}.xlsx`;
+      // Create a temporary link element to trigger the download
+      const link = document.createElement('a');
+      link.href = exportUrl;
+      link.setAttribute('download', `student_debts_${month}_${year}_${new Date().toISOString().slice(0, 10)}.xlsx`);
+      link.setAttribute('target', '_blank');
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
       
-      XLSX.writeFile(workbook, fileName);
-      showToastMessage("Export successful");
+      showToastMessage("Export initiated");
     } catch (error) {
       console.error("Export error:", error);
       showToastMessage("Export failed");
     }
   };
-  
-  // Calculate summary statistics
-  const summary = useMemo(() => {
-    if (!students.length) return { totalPreviousBalance: 0, totalPaid: 0, totalCurrentBalance: 0, totalBalance: 0 };
-    
-    return students.reduce((acc, student) => {
-      acc.totalPreviousBalance += parseFloat(student.du_cuoi_thang_truoc || 0);
-      acc.totalPaid += parseFloat(student.dathu || 0);
-      acc.totalCurrentBalance += parseFloat(student.du_cuoi_thang_nay || 0);
-      acc.totalBalance += parseFloat(student.tong_du_cuoi || 0);
-      return acc;
-    }, { 
-      totalPreviousBalance: 0, 
-      totalPaid: 0, 
-      totalCurrentBalance: 0, 
-      totalBalance: 0 
-    });
-  }, [students]);
   
   return (
     <div className="container mx-auto py-4 px-4">
@@ -417,19 +416,19 @@ export default function Debt() {
             <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
               <div>
                 <p className="text-sm text-gray-600">Tổng dư tháng trước:</p>
-                <p className="font-semibold">{formatCurrency(summary.totalPreviousBalance)}</p>
+                <p className="font-semibold">{formatCurrency(summaryData.totalPreviousBalance)}</p>
               </div>
               <div>
                 <p className="text-sm text-gray-600">Tổng đã thu:</p>
-                <p className="font-semibold text-green-600">{formatCurrency(summary.totalPaid)}</p>
+                <p className="font-semibold text-green-600">{formatCurrency(summaryData.totalPaid)}</p>
               </div>
               <div>
                 <p className="text-sm text-gray-600">Tổng dư tháng này:</p>
-                <p className="font-semibold">{formatCurrency(summary.totalCurrentBalance)}</p>
+                <p className="font-semibold">{formatCurrency(summaryData.totalCurrentBalance)}</p>
               </div>
               <div>
                 <p className="text-sm text-gray-600">Tổng dư cuối:</p>
-                <p className="font-semibold text-blue-600">{formatCurrency(summary.totalBalance)}</p>
+                <p className="font-semibold text-blue-600">{formatCurrency(summaryData.totalBalance)}</p>
               </div>
             </div>
           </div>
@@ -451,28 +450,56 @@ export default function Debt() {
         
         {/* Results table */}
         {!isLoading && students.length > 0 && (
-          <div className="overflow-x-auto">
-            <table className="w-full border-collapse">
+          <div className="overflow-x-auto shadow-md rounded-lg">
+            <table className="w-full border-collapse bg-white">
               <thead>
-                <tr className="bg-gray-100">
-                  {TABLE_HEAD.map((head) => (
-                    <th key={head} className="border border-gray-200 px-4 py-2 text-left text-sm font-medium text-gray-700">
-                      {head}
-                    </th>
-                  ))}
+                <tr className="bg-gray-100 border-b border-gray-300">
+                  <th className="px-4 py-3 text-left text-xs font-semibold text-gray-700 uppercase tracking-wider w-24">
+                    MSHS
+                  </th>
+                  <th className="px-4 py-3 text-left text-xs font-semibold text-gray-700 uppercase tracking-wider w-48">
+                    Họ và tên
+                  </th>
+                  <th className="px-4 py-3 text-left text-xs font-semibold text-gray-700 uppercase tracking-wider w-16">
+                    Khối
+                  </th>
+                  <th className="px-4 py-3 text-left text-xs font-semibold text-gray-700 uppercase tracking-wider w-16">
+                    Lớp
+                  </th>
+                  <th className="px-4 py-3 text-right text-xs font-semibold text-gray-700 uppercase tracking-wider w-36">
+                    Dư cuối tháng trước
+                  </th>
+                  <th className="px-4 py-3 text-right text-xs font-semibold text-gray-700 uppercase tracking-wider w-36">
+                    Đã thu
+                  </th>
+                  <th className="px-4 py-3 text-right text-xs font-semibold text-gray-700 uppercase tracking-wider w-36">
+                    Dư cuối tháng này
+                  </th>
+                  <th className="px-4 py-3 text-right text-xs font-semibold text-gray-700 uppercase tracking-wider w-36">
+                    Tổng dư cuối
+                  </th>
                 </tr>
               </thead>
-              <tbody>
+              <tbody className="divide-y divide-gray-200">
                 {students.map((student, index) => (
-                  <tr key={student.mshs} className={index % 2 === 0 ? 'bg-white' : 'bg-gray-50'}>
-                    <td className="border border-gray-200 px-4 py-2 text-sm">{student.mshs}</td>
-                    <td className="border border-gray-200 px-4 py-2 text-sm">{student.ten}</td>
-                    <td className="border border-gray-200 px-4 py-2 text-sm">{student.khoi}</td>
-                    <td className="border border-gray-200 px-4 py-2 text-sm">{student.lop}</td>
-                    <td className="border border-gray-200 px-4 py-2 text-sm">{formatCurrency(student.du_cuoi_thang_truoc)}</td>
-                    <td className="border border-gray-200 px-4 py-2 text-sm text-green-600 font-medium">{formatCurrency(student.dathu)}</td>
-                    <td className="border border-gray-200 px-4 py-2 text-sm">{formatCurrency(student.du_cuoi_thang_nay)}</td>
-                    <td className={`border border-gray-200 px-4 py-2 text-sm font-medium ${parseFloat(student.tong_du_cuoi) < 0 ? 'text-red-600' : 'text-blue-600'}`}>
+                  <tr 
+                    key={student.mshs} 
+                    className={`hover:bg-gray-50 transition-colors duration-150 ease-in-out ${index % 2 === 0 ? 'bg-white' : 'bg-gray-50'}`}
+                  >
+                    <td className="px-4 py-3 text-sm font-medium text-gray-900">{student.mshs}</td>
+                    <td className="px-4 py-3 text-sm text-gray-900">{student.ten}</td>
+                    <td className="px-4 py-3 text-sm text-gray-900 text-center">{student.khoi}</td>
+                    <td className="px-4 py-3 text-sm text-gray-900 text-center">{student.lop}</td>
+                    <td className={`px-4 py-3 text-sm font-medium text-right ${parseFloat(student.du_cuoi_thang_truoc) < 0 ? 'text-red-600' : parseFloat(student.du_cuoi_thang_truoc) > 0 ? 'text-green-600' : 'text-gray-500'}`}>
+                      {formatCurrency(student.du_cuoi_thang_truoc)}
+                    </td>
+                    <td className={`px-4 py-3 text-sm font-medium text-right ${parseFloat(student.dathu) < 0 ? 'text-red-600' : parseFloat(student.dathu) > 0 ? 'text-green-600' : 'text-gray-500'}`}>
+                      {formatCurrency(student.dathu)}
+                    </td>
+                    <td className={`px-4 py-3 text-sm font-medium text-right ${parseFloat(student.du_cuoi_thang_nay) < 0 ? 'text-red-600' : parseFloat(student.du_cuoi_thang_nay) > 0 ? 'text-green-600' : 'text-gray-500'}`}>
+                      {formatCurrency(student.du_cuoi_thang_nay)}
+                    </td>
+                    <td className={`px-4 py-3 text-sm font-semibold text-right ${parseFloat(student.tong_du_cuoi) < 0 ? 'text-red-600' : parseFloat(student.tong_du_cuoi) > 0 ? 'text-blue-600' : 'text-gray-500'}`}>
                       {formatCurrency(student.tong_du_cuoi)}
                     </td>
                   </tr>
@@ -520,6 +547,9 @@ export default function Debt() {
             </div>
           </div>
         )}
+        
+        {/* Toast notification */}
+        {showToast && <Toast message={toastMessage} onClose={() => setShowToast(false)} />}
       </div>
     </div>
   );

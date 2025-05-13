@@ -1,7 +1,7 @@
 <?php
+
 namespace App\Models;
 
-use App\Models\Classes;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 
@@ -17,12 +17,25 @@ class Student extends Model
     ];
 
     /**
+     * The attributes that should be cast.
+     *
+     * @var array
+     */
+    protected $casts = [
+        'stay_in' => 'boolean',
+        'leave_school' => 'boolean',
+        'fail_grade' => 'boolean',
+        'day_of_birth' => 'date',
+        'day_in' => 'date',
+        'day_out' => 'date',
+        'discount' => 'float',
+        'extra_fee' => 'float',
+    ];
+
+    /**
      * Get the balance record associated with the student.
      */
-    public function balance()
-    {
-        return $this->hasOne(StudentBalance::class, 'mshs', 'mshs');
-    }
+    
 
     // public function class()
     // {

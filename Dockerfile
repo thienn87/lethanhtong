@@ -76,6 +76,21 @@ RUN chmod +x /usr/local/bin/docker-entrypoint.sh
 # Set permissions
 RUN chown -R www-data:www-data /var/www/html
 
+# Install cron
+RUN apt-get update && apt-get install -y cron
+
+# Add crontab file
+COPY crontab /etc/cron.d/laravel-scheduler
+RUN chmod 0644 /etc/cron.d/laravel-scheduler
+RUN crontab /etc/cron.d/laravel-scheduler
+
+# Create the log file
+RUN touch /var/log/cron.log
+
+# Add entrypoint script
+COPY docker-entrypoint.sh /usr/local/bin/
+RUN chmod +x /usr/local/bin/docker-entrypoint.sh
+
 # Expose port 9000
 EXPOSE 9000
 
@@ -84,3 +99,6 @@ ENTRYPOINT ["docker-entrypoint.sh"]
 
 # Start PHP server
 CMD ["php", "artisan", "serve", "--host=0.0.0.0", "--port=9000"]
+
+
+

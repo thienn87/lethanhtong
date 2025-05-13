@@ -1,215 +1,538 @@
-import React from "react";
-import { useState, useCallback } from "react";
-
-import { v4 as uuidv4 } from "uuid";
+import React, { useState, useCallback, useMemo, useEffect, memo, useRef, Suspense, lazy } from "react";
 import { format } from "date-fns";
-import { Card, Typography, IconButton, Button } from "@material-tailwind/react";
+import { Card, Typography, Button, Spinner } from "@material-tailwind/react";
 import { Config } from "../config";
-import TransactionStudentModal from "./transactionStudentModal";
+
+// Lazy load the transaction components to improve initial load time
+const TransactionContent = lazy(() => import("./transactionContent"));
+
+// Global cache for students data
+// This will be shared across component instances but cleared on navigation
+let globalStudentsCache = null;
+
+// Memoized table header component to prevent unnecessary re-renders
+const TableHeader = memo(() => (
+  <tr>
+    {[
+      { title: "MSHS" },
+      { title: "Họ" },
+      { title: "Tên" },
+      { title: "Ngày sinh" },
+      { title: "Lớp" },
+      { title: "Giảm HP (%)" },
+    ].map(({ title }) => (
+      <th
+        key={title}
+        className="border-b border-gray-900 bg-gray-50 p-4 sticky top-0 z-10"
+      >
+        <Typography
+          variant="small"
+          className="text-gray-800 font-bold"
+        >
+          {title}
+        </Typography>
+      </th>
+    ))}
+  </tr>
+));
+
+// Memoized table row component to prevent unnecessary re-renders
+const StudentRow = memo(({ 
+  item, 
+  isLast, 
+  isExpanded, 
+  onToggleExpand,
+  activeStudentMshs
+}) => {
+  const classes = isLast ? "p-4" : "p-4 border-b border-blue-gray-300";
+  const isActive = activeStudentMshs === item.mshs;
+  
+  // Format date once with improved error handling
+  const formattedDate = useMemo(() => {
+    try {
+      // Check if day_of_birth exists and is valid
+      if (!item.day_of_birth) return "N/A";
+      // Try to parse the date - handle both string formats and Date objects
+      const dateObj = new Date(item.day_of_birth);
+      
+      // Check if date is valid
+      if (isNaN(dateObj.getTime())) return "Invalid date";
+      
+      // Format the date
+      return format(dateObj, "dd/MM/yyyy");
+    } catch (error) {
+      console.error("Error formatting date:", error, item.day_of_birth);
+      return "Invalid date";
+    }
+  }, [item.day_of_birth]);
+
+  return (
+    <>
+      <tr 
+        id={`student-row-${item.mshs}`}
+        className={`
+          ${isActive ? "bg-violet-200" : "even:bg-gray-100"} 
+          hover:bg-violet-200 transition-colors duration-150 cursor-pointer
+          ${isActive ? "border-l-4 border-violet-900" : ""}
+        `}
+        onClick={() => onToggleExpand(item)}
+      >
+        <td className={classes}>
+          <Typography variant="small" color="blue-gray" className="font-normal">
+            {item.mshs}
+          </Typography>
+        </td>
+        <td className={classes}>
+          <Typography variant="small" color="blue-gray" className="font-normal">
+            {item.sur_name}
+          </Typography>
+        </td>
+        <td className={classes}>
+          <Typography variant="small" color="blue-gray" className="font-normal">
+            {item.name}
+          </Typography>
+        </td>
+        <td className={classes}>
+          <Typography variant="small" color="blue-gray" className="font-normal">
+            {formattedDate}
+          </Typography>
+        </td>
+        <td className={classes}>
+          <Typography variant="small" color="blue-gray" className="font-normal">
+            {item.grade}
+            {item.class}
+          </Typography>
+        </td>
+        <td className={classes}>
+          <div className="flex items-center justify-between">
+            <Typography
+              variant="small"
+              color={item.discount > 0 ? "green" : "blue-gray"}
+              className={item.discount > 0 ? "font-bold" : "font-normal"}
+            >
+              {item.discount > 0 ? item.discount : "-"}
+            </Typography>
+            
+            {/* Expand/collapse indicator */}
+            <div className="ml-2 text-gray-500">
+              {isActive ? (
+                <svg
+                  className="w-5 h-5"
+                  xmlns="http://www.w3.org/2000/svg"
+                  viewBox="0 0 20 20"
+                  fill="currentColor"
+                >
+                  <path d="M5.25 12.75a.75.75 0 0 1 .75-.75h8a.75.75 0 0 1 0 1.5H6a.75.75 0 0 1-.75-.75Z" />
+                </svg>
+              ) : (
+                <svg
+                  className="w-5 h-5"
+                  xmlns="http://www.w3.org/2000/svg"
+                  viewBox="0 0 20 20"
+                  fill="currentColor"
+                >
+                  <path d="M10.75 4.75a.75.75 0 0 0-1.5 0v4.5h-4.5a.75.75 0 0 0 0 1.5h4.5v4.5a.75.75 0 0 0 1.5 0v-4.5h4.5a.75.75 0 0 0 0-1.5h-4.5v-4.5Z" />
+                </svg>
+              )}
+            </div>
+          </div>
+        </td>
+      </tr>
+      {isActive && (
+        <tr>
+          <td colSpan={6} className="p-0 border-b border-blue-gray-300">
+            <div className="bg-violet-900 p-4 transition-all duration-300 ease-in-out">
+              <Suspense fallback={
+                <div className="flex justify-center items-center py-8">
+                  <Spinner className="h-8 w-8 text-white" />
+                </div>
+              }>
+                <TransactionContent 
+                  data={item} 
+                  onClose={() => onToggleExpand(null)} 
+                />
+              </Suspense>
+            </div>
+          </td>
+        </tr>
+      )}
+    </>
+  );
+});
+
+// Empty state component
+const EmptyState = memo(({ message }) => (
+  <tr>
+    <td colSpan={6} className="p-4 text-center">
+      {message}
+    </td>
+  </tr>
+));
+
+// Loading state component
+const LoadingState = memo(() => (
+  <tr>
+    <td colSpan={6} className="p-4 text-center">
+      <Spinner className="h-8 w-8 mx-auto" />
+    </td>
+  </tr>
+));
 
 const SearchStudent = ({ navigation }) => {
   const domain = Config();
+  const abortControllerRef = useRef(null);
+  const initialLoadRef = useRef(true);
+  const cacheTimestampRef = useRef(null);
+  const tableRef = useRef(null);
 
   const [loading, setLoading] = useState(false);
-  const [loadingClasses, setLoadingClasses] = useState(false);
-  const [modal, setModal] = useState(false);
-  const [results, setResults] = useState(null);
-  const [studentDetail, setStudentDetail] = useState([]);
-  const [classes, setClasses] = useState([]);
+  const [initialLoading, setInitialLoading] = useState(false);
+  const [allStudents, setAllStudents] = useState(null);
+  const [displayedResults, setDisplayedResults] = useState(null);
+  const [activeStudentMshs, setActiveStudentMshs] = useState(null);
   const [hasDiscount, setHasDiscount] = useState(false);
   
-  // Use state instead of refs for better reactivity
+  // Use state for form values
   const [gradeValue, setGradeValue] = useState("");
   const [classValue, setClassValue] = useState("");
   const [searchValue, setSearchValue] = useState("");
 
-  // Fetch classes based on selected grade
-  const fetchClassesByGrade = async (selectedGrade) => {
-    if (!selectedGrade) {
-      setClasses([]);
-      setClassValue("");
-      return;
-    }
+  // For Classes and Grade select
+  const [allClasses, setAllClasses] = useState([]);
+  const [classesLoading, setClassesLoading] = useState(false);
+  const [error, setError] = useState(null);
+  
+  // Clear cache on unmount or navigation
+  useEffect(() => {
+    return () => {
+      // Clear the global cache when component unmounts
+      globalStudentsCache = null;
+    };
+  }, []);
+
+  // Filter classes based on selected grade
+  const filteredClasses = useMemo(() => {
+    if (!gradeValue) return allClasses;
+    return allClasses.filter(c => c.grade === gradeValue);
+  }, [allClasses, gradeValue]);
+  
+  // Reset class selection when grade changes
+  useEffect(() => {
+    setClassValue("");
+  }, [gradeValue]);
+
+  // Fetch classes data
+  const fetchClasses = useCallback(async () => {
+    if (allClasses.length > 0) return; // Only fetch once
     
-    setLoadingClasses(true);
+    setClassesLoading(true);
     try {
-      const response = await fetch(`${domain}/api/classes/by-grade/${selectedGrade}`, {
-        method: "GET",
+      // Use AbortController for cancellable fetch
+      const controller = new AbortController();
+      const signal = controller.signal;
+      
+      const response = await fetch(`${domain}/api/classes/`, {
+        method: 'GET',
         headers: {
-          "Content-Type": "application/json",
+          'Content-Type': 'application/json'
         },
+        signal
       });
 
       if (response.ok) {
         const data = await response.json();
-        if (data.success && Array.isArray(data.data)) {
-          // Sort classes numerically
-          const sortedClasses = data.data.sort((a, b) => {
-            return parseInt(a.name) - parseInt(b.name);
+        setAllClasses(data.data || []);
+      } else {
+        throw new Error('Error fetching class data');
+      }
+    } catch (error) {
+      if (error.name !== 'AbortError') {
+        console.error('Error:', error.message);
+        setError('Không thể tải danh sách lớp. Vui lòng thử lại sau.');
+      }
+    } finally {
+      setClassesLoading(false);
+    }
+  }, [domain, allClasses.length]);
+
+  // Fetch all students data for local cache
+  const fetchAllStudents = useCallback(async (forceRefresh = false) => {
+    // If we already have cached data and it's not a forced refresh, use it
+    if (globalStudentsCache && !forceRefresh) {
+      setAllStudents(globalStudentsCache.data);
+      cacheTimestampRef.current = globalStudentsCache.timestamp;
+      return;
+    }
+    
+    // Cancel any in-flight requests
+    if (abortControllerRef.current) {
+      abortControllerRef.current.abort();
+    }
+    
+    setInitialLoading(true);
+    
+    try {
+      // Create new AbortController for this request
+      abortControllerRef.current = new AbortController();
+      const signal = abortControllerRef.current.signal;
+      
+      const response = await fetch(
+        `${domain}/api/students/all`,
+        {
+          method: "GET",
+          headers: {
+            "Content-Type": "application/json",
+          },
+          signal
+        }
+      );
+      
+      if (response.ok) {
+        const data = await response.json();
+        
+        // Update state with results
+        const students = data.data || [];
+        setAllStudents(students);
+        
+        // Update global cache
+        const timestamp = Date.now();
+        globalStudentsCache = {
+          data: students,
+          timestamp: timestamp
+        };
+        cacheTimestampRef.current = timestamp;
+      } else {
+        throw new Error("Error fetching students data");
+      }
+    } catch (error) {
+      if (error.name !== 'AbortError') {
+        console.error("Error:", error.message);
+        setError("Không thể tải dữ liệu học sinh. Vui lòng thử lại sau.");
+      }
+    } finally {
+      setInitialLoading(false);
+    }
+  }, [domain]);
+
+  // Load initial data
+  useEffect(() => {
+    fetchClasses();
+    fetchAllStudents();
+  }, [fetchClasses, fetchAllStudents]);
+
+  // Check if cache is stale (older than 15 minutes)
+  const isCacheStale = useCallback(() => {
+    if (!cacheTimestampRef.current) return true;
+    
+    // Cache is stale if it's older than 15 minutes
+    return Date.now() - cacheTimestampRef.current > 15 * 60 * 1000;
+  }, []);
+
+  // Perform client-side search
+  const performSearch = useCallback(() => {
+    if (!allStudents) return;
+    
+    setLoading(true);
+    
+    // Use setTimeout to allow UI to update with loading state
+    setTimeout(() => {
+      try {
+        let results = [...allStudents];
+        
+        // Filter by search value (MSHS or name)
+        if (searchValue) {
+          const searchLower = searchValue.toLowerCase();
+          results = results.filter(student => 
+            (student.mshs && student.mshs.toLowerCase().includes(searchLower)) ||
+            (student.name && student.name.toLowerCase().includes(searchLower)) ||
+            (student.sur_name && student.sur_name.toLowerCase().includes(searchLower))
+          );
+        }
+        
+        // Filter by grade
+        if (gradeValue) {
+          results = results.filter(student => 
+            student.grade && student.grade.toString() === gradeValue
+          );
+        }
+        
+        // Filter by class
+        if (classValue) {
+          results = results.filter(student => 
+            student.class && student.class === classValue
+          );
+        }
+        
+        // Filter by discount
+        if (hasDiscount) {
+          results = results.filter(student => 
+            student.discount && student.discount > 0
+          );
+        }
+        
+        setDisplayedResults(results);
+        
+        // Close any expanded row when search results change
+        setActiveStudentMshs(null);
+      } catch (error) {
+        console.error("Error during client-side search:", error);
+        setError("Lỗi khi tìm kiếm. Vui lòng thử lại.");
+      } finally {
+        setLoading(false);
+      }
+    }, 0);
+  }, [allStudents, searchValue, gradeValue, classValue, hasDiscount]);
+
+  // Handle search button click
+  const handleSearch = useCallback(async (forceRefresh = false) => {
+    // If cache is stale or force refresh is requested, fetch fresh data
+    if (forceRefresh || isCacheStale()) {
+      await fetchAllStudents(true);
+    }
+    
+    performSearch();
+  }, [fetchAllStudents, performSearch, isCacheStale]);
+
+  // Auto-search when filter criteria change
+  useEffect(() => {
+    // Skip the initial render
+    if (initialLoadRef.current) {
+      initialLoadRef.current = false;
+      return;
+    }
+    
+    // Only search if we have students data
+    if (allStudents) {
+      performSearch();
+    }
+  }, [searchValue, gradeValue, classValue, hasDiscount, performSearch, allStudents]);
+
+  // Toggle expanded row
+  const handleToggleExpand = useCallback((student) => {
+    setActiveStudentMshs(prevMshs => {
+      // If clicking on the same student, close the expanded row
+      if (prevMshs === student?.mshs) {
+        return null;
+      }
+      // Otherwise, expand the clicked student
+      return student?.mshs || null;
+    });
+    
+    // Scroll to the expanded row after a short delay to allow rendering
+    if (student) {
+      setTimeout(() => {
+        const activeRow = document.getElementById(`student-row-${student.mshs}`);
+        if (activeRow && tableRef.current) {
+          tableRef.current.scrollTo({
+            top: activeRow.offsetTop - 100,
+            behavior: 'smooth'
           });
-          
-          setClasses(sortedClasses);
-        } else {
-          console.error("Failed to fetch classes:", data.message);
-          setClasses([]);
         }
-      } else {
-        throw new Error("Error fetching classes");
-      }
-    } catch (error) {
-      console.error("Error:", error.message);
-      setClasses([]);
-    } finally {
-      setLoadingClasses(false);
+      }, 100);
     }
-  };
+  }, []);
 
-  // Handle grade change
-  const handleGradeChange = (event) => {
-    const newGrade = event.target.value;
-    setGradeValue(newGrade);
-    setClassValue(""); // Reset class selection when grade changes
-    fetchClassesByGrade(newGrade);
-  };
-
-  const fetchSearch = useCallback(async () => {
-    setLoading(true);
-    try {
-      // Build query parameters consistently
-      const queryParams = new URLSearchParams();
-      if (searchValue) queryParams.append("keyword", searchValue);
-      if (gradeValue) queryParams.append("grade", gradeValue);
-      if (classValue) queryParams.append("class", classValue);
-      if (hasDiscount) queryParams.append("hasDiscount", "true");
-      
-      const response = await fetch(
-        `${domain}/api/students/search?${queryParams.toString()}`,
-        {
-          method: "GET",
-          headers: {
-            "Content-Type": "application/json",
-          },
-        }
-      );
-      
-      if (response.ok) {
-        const data = await response.json();
-        setResults(data.data);
-      } else {
-        throw new Error("Error sending form data");
-      }
-    } catch (error) {
-      console.error("Error:", error.message);
-    } finally {
-      setLoading(false);
-    }
-  }, [domain, searchValue, gradeValue, classValue, hasDiscount]);
-
-  const fetchSuggest = useCallback(async () => {
-    setLoading(true);
-    try {
-      // Build query parameters consistently
-      const queryParams = new URLSearchParams();
-      if (searchValue) queryParams.append("keyword", searchValue);
-      // Include grade and class parameters for consistency
-      if (gradeValue) queryParams.append("grade", gradeValue);
-      if (classValue) queryParams.append("class", classValue);
-      if (hasDiscount) queryParams.append("hasDiscount", "true");
-      
-      const response = await fetch(
-        `${domain}/api/students/search?${queryParams.toString()}`,
-        {
-          method: "GET",
-          headers: {
-            "Content-Type": "application/json",
-          },
-        }
-      );
-      
-      if (response.ok) {
-        const data = await response.json();
-        setResults(data.data);
-      } else {
-        throw new Error("Error sending form data");
-      }
-    } catch (error) {
-      console.error("Error:", error.message);
-    } finally {
-      setLoading(false);
-    }
-  }, [domain, searchValue, gradeValue, classValue, hasDiscount]);
-
-  const exportStudentData = async () => {
-    try {
-      // Build query parameters
-      const queryParams = new URLSearchParams();
-      if (searchValue) queryParams.append("keyword", searchValue);
-      if (gradeValue) queryParams.append("grade", gradeValue);
-      if (classValue) queryParams.append("class", classValue);
-      if (hasDiscount) queryParams.append("hasDiscount", "true");
-      
-      const response = await fetch(
-        `${domain}/api/students/export/filter?${queryParams.toString()}`,
-        {
-          method: "GET",
-          headers: {
-            "Content-Type": "application/json",
-          },
-        }
-      );
-  
-      if (response.ok) {
-        const data = await response.json();
-  
-        // Kiểm tra nếu phản hồi chứa `filePath`
-        if (data.filePath) {
-          // Mở liên kết trong tab mới
-          window.open(data.filePath, "_blank");
-          console.log("File link opened in a new tab");
-        } else {
-          console.log(data.message || "No file path provided in response");
-        }
-      } else {
-        throw new Error("Error exporting student data");
-      }
-    } catch (error) {
-      console.error("Error:", error.message);
-    }
-  };
-
-  const handleOpenModal = (data) => {
-    setModal(true);
-    setStudentDetail(data);
-  };
-
-  const handleCloseModal = () => {
-    setModal(false);
-  };
-
-  const handleDiscountChange = () => {
+  const handleDiscountChange = useCallback(() => {
     setHasDiscount(prevState => !prevState);
-  };
+  }, []);
 
-  const handleSearchInputChange = (event) => {
+  const handleSearchInputChange = useCallback((event) => {
     setSearchValue(event.target.value);
-  };
+  }, []);
 
-  const handleSearchKeyUp = (event) => {
-    if (event.key === "Enter") {
-      fetchSuggest();
-    }
-  };
-
-  const handleClearSearch = () => {
+  const handleClearSearch = useCallback(() => {
     setSearchValue("");
+  }, []);
+
+  const handleGradeChange = useCallback((e) => {
+    setGradeValue(e.target.value);
+  }, []);
+
+  const handleClassChange = useCallback((e) => {
+    setClassValue(e.target.value);
+  }, []);
+
+  // Memoize grade options to prevent re-renders
+  const gradeOptions = useMemo(() => {
+    return [6, 7, 8, 9, 10, 11, 12].map(g => (
+      <option key={g} value={g.toString()}>Khối {g}</option>
+    ));
+  }, []);
+
+  // Memoize class options to prevent re-renders
+  const classOptions = useMemo(() => {
+    if (classesLoading) {
+      return <option disabled>Đang tải...</option>;
+    } 
+    
+    if (filteredClasses.length > 0) {
+      return filteredClasses.map((c, index) => (
+        <option key={index} value={c.name}>
+          {c.name}
+        </option>
+      ));
+    }
+    
+    if (gradeValue) {
+      return <option disabled>Không có lớp cho khối {gradeValue}</option>;
+    }
+    
+    return null;
+  }, [classesLoading, filteredClasses, gradeValue]);
+
+  // Determine if we should show the results section
+  const showResults = displayedResults !== null || loading;
+
+  // Determine what to show in the table body
+  const renderTableBody = () => {
+    if (initialLoading) {
+      return <EmptyState message={
+        <div className="flex flex-col items-center">
+          <Spinner className="h-8 w-8 mb-2" />
+          <span>Đang tải dữ liệu học sinh...</span>
+        </div>
+      } />;
+    }
+    
+    if (loading) {
+      return <LoadingState />;
+    }
+    
+    if (!displayedResults || displayedResults.length === 0) {
+      return <EmptyState message="Không tìm thấy học sinh nào" />;
+    }
+    
+    return displayedResults.map((item, index) => (
+      <StudentRow
+        key={item.mshs || index}
+        item={item}
+        isLast={index === displayedResults.length - 1}
+        isExpanded={activeStudentMshs === item.mshs}
+        onToggleExpand={handleToggleExpand}
+        activeStudentMshs={activeStudentMshs}
+      />
+    ));
   };
+
+  // Get cache status for display
+  const cacheStatus = useMemo(() => {
+    if (!cacheTimestampRef.current) return "Chưa có cache";
+    const cacheTime = new Date(cacheTimestampRef.current);
+    const timeString = cacheTime.toLocaleTimeString();
+    const isStale = isCacheStale();
+    
+    return `Cache: ${timeString} ${isStale ? "(cũ)" : "(mới)"}`;
+  }, [isCacheStale]);
 
   return (
     <>
       <div className="card">
         <div className="card-body">
           <div className="container">
-            <h3 className="my-3 font-bold mb-4">Tìm kiếm học sinh</h3>
+            <div className="flex justify-between items-center mb-4">
+              <h3 className="font-bold">Tìm kiếm học sinh</h3>
+              <div className="text-xs text-gray-500">{cacheStatus}</div>
+            </div>
             <div className="column-12 mb-5">
               <div className="input">
                 <svg
@@ -228,11 +551,10 @@ const SearchStudent = ({ navigation }) => {
                 <input
                   className="input px-0 border-none bg-transparent shadow-none ml-2.5 focus:bg-transparent"
                   name="query"
-                  placeholder="Tên Học Sinh"
+                  placeholder="MSHS/Tên Học Sinh"
                   type="text"
                   value={searchValue}
                   onChange={handleSearchInputChange}
-                  onKeyUp={handleSearchKeyUp}
                   autoFocus
                 />
                 {searchValue && (
@@ -268,14 +590,8 @@ const SearchStudent = ({ navigation }) => {
                     value={gradeValue}
                     onChange={handleGradeChange}
                   >
-                    <option value="">Chọn khối</option>
-                    <option value="6">6</option>
-                    <option value="7">7</option>
-                    <option value="8">8</option>
-                    <option value="9">9</option>
-                    <option value="10">10</option>
-                    <option value="11">11</option>
-                    <option value="12">12</option>
+                    <option value="">-- Tất cả khối --</option>
+                    {gradeOptions}
                   </select>
                 </div>
               </div>
@@ -288,23 +604,11 @@ const SearchStudent = ({ navigation }) => {
                     className="select"
                     name="class_id"
                     value={classValue}
-                    onChange={(e) => setClassValue(e.target.value)}
-                    disabled={!gradeValue || loadingClasses}
+                    onChange={handleClassChange}
+                    disabled={classesLoading}
                   >
-                    <option value="">
-                      {loadingClasses 
-                        ? "Đang tải..." 
-                        : !gradeValue 
-                          ? "Chọn khối trước" 
-                          : classes.length === 0 
-                            ? "Không có lớp" 
-                            : "Chọn lớp"}
-                    </option>
-                    {classes.map((c) => (
-                      <option key={c.id} value={c.name}>
-                        Lớp {c.name}
-                      </option>
-                    ))}
+                    <option value="">-- Tất cả lớp --</option>
+                    {classOptions}
                   </select>
                 </div>
               </div>
@@ -322,17 +626,34 @@ const SearchStudent = ({ navigation }) => {
                   </label>
                 </div>
               </div>
-              <div className="w-full">
+              <div className="w-full flex gap-2">
                 <Button
                   className={`${
-                    !loading
+                    !loading && !initialLoading
                       ? "bg-blue-500 text-white hover:bg-blue-600"
                       : "bg-gray-300 text-gray-400"
-                  } `}
-                  disabled={loading}
-                  onClick={fetchSearch}
+                  } flex-1`}
+                  disabled={loading || initialLoading}
+                  onClick={() => handleSearch(false)}
                 >
-                  {loading ? "Đang tìm..." : "Tìm kiếm"}
+                  {loading || initialLoading ? (
+                    <div className="flex items-center justify-center">
+                      <Spinner className="h-4 w-4 mr-2" />
+                      <span>Đang tìm...</span>
+                    </div>
+                  ) : (
+                    "Tìm kiếm"
+                  )}
+                </Button>
+                <Button
+                  className="bg-green-500 hover:bg-green-600 text-white"
+                  disabled={loading || initialLoading}
+                  onClick={() => handleSearch(true)}
+                  title="Làm mới dữ liệu cache"
+                >
+                  <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
+                  </svg>
                 </Button>
               </div>
             </div>
@@ -340,177 +661,44 @@ const SearchStudent = ({ navigation }) => {
         </div>
       </div>
       
-      {results && (
-        <>
-          <div className="flex justify-end items-center mt-5">
-            <Button
-              className={`${
-                !loading
-                  ? "bg-blue-500 text-white hover:bg-blue-600"
-                  : "bg-gray-300 text-gray-400"
-              } `}
-              disabled={loading}
-              onClick={exportStudentData}
-            >
-              Xuất dữ liệu
-            </Button>
-          </div>
-
-          <div className="card mt-5">
-            <div className="card-body">
-              <div className="container">
-                <div className="my-3">
-                  <div className="flex justify-between items-center">
-                    <h3 className="my-3 font-bold">Danh sách học sinh ({results.length})</h3>
+      {/* Always render the results container with fixed height to prevent layout shifts */}
+      <div className="card mt-5" style={{ display: showResults ? 'block' : 'none' }}>
+        <div className="card-body">
+          <div className="container">
+            <div className="my-3">
+              <div className="flex justify-between items-center mb-4">
+                <h3 className="font-bold">
+                  Danh sách học sinh {displayedResults ? `(${displayedResults.length})` : ''}
+                </h3>
+                {allStudents && (
+                  <div className="text-xs text-gray-500">
+                    Tổng số học sinh: {allStudents.length}
                   </div>
-                  <Card className="h-full w-full overflow-hidden">
-                    <table className="w-full min-w-max table-auto text-left">
-                      <thead>
-                        <tr>
-                          {[
-                            {
-                              title: "MSHS",
-                            },
-                            {
-                              title: "Họ",
-                            },
-                            {
-                              title: "Tên",
-                            },
-                            {
-                              title: "Ngày sinh",
-                            },
-                            {
-                              title: "Lớp",
-                            },
-                            {
-                              title: "Giảm HP (%)",
-                            },
-                            {
-                              title: "Thu HP",
-                            },
-                          ].map(({ title }) => (
-                            <th
-                              key={uuidv4()}
-                              className="border-b border-gray-900 bg-gray-50 p-4"
-                            >
-                              <Typography
-                                variant="small"
-                                className=" text-gray-800 font-bold"
-                              >
-                                {title}
-                              </Typography>
-                            </th>
-                          ))}
-                        </tr>
-                      </thead>
-                      <tbody>
-                        {results.map((item, index) => {
-                          const isLast = index === results.length - 1;
-                          const classes = isLast
-                            ? "p-4"
-                            : "p-4 border-b border-blue-gray-300";
-                          return (
-                            <tr
-                              key={`${uuidv4()}-${index}`}
-                              className="even:bg-gray-100"
-                            >
-                              <td className={classes}>
-                                <Typography
-                                  variant="small"
-                                  color="blue-gray"
-                                  className="font-normal"
-                                >
-                                  {item.mshs}
-                                </Typography>
-                              </td>
-                              <td className={classes}>
-                                <Typography
-                                  variant="small"
-                                  color="blue-gray"
-                                  className="font-normal"
-                                >
-                                  {item.sur_name}
-                                </Typography>
-                              </td>
-                              <td className={classes}>
-                                <Typography
-                                  variant="small"
-                                  color="blue-gray"
-                                  className="font-normal"
-                                >
-                                  {item.name}
-                                </Typography>
-                              </td>
-                              <td className={classes}>
-                                <Typography
-                                  variant="small"
-                                  color="blue-gray"
-                                  className="font-normal"
-                                >
-                                  {format(
-                                    new Date(item.day_of_birth),
-                                    "dd/MM/yyyy"
-                                  )}
-                                </Typography>
-                              </td>
-                              <td className={classes}>
-                                <Typography
-                                  variant="small"
-                                  color="blue-gray"
-                                  className="font-normal"
-                                >
-                                  {item.grade}
-                                  {item.class}
-                                </Typography>
-                              </td>
-                              <td className={classes}>
-                                <Typography
-                                  variant="small"
-                                  color={item.discount > 0 ? "green" : "blue-gray"}
-                                  className={item.discount > 0 ? "font-bold" : "font-normal"}
-                                >
-                                  {item.discount > 0 ? item.discount : "-"}
-                                </Typography>
-                              </td>
-                              <td className={classes}>
-                                <IconButton
-                                  className="btn btn-sm btn-icon btn-clear btn-light"
-                                  onClick={() => handleOpenModal(item)}
-                                >
-                                  <svg
-                                    className="w-[18px]"
-                                    xmlns="http://www.w3.org/2000/svg"
-                                    viewBox="0 0 20 20"
-                                  >
-                                    <path d="M8.575 4.649c.707-.734 1.682-1.149 2.7-1.149h1.975c1.795 0 3.25 1.455 3.25 3.25v1.5c0 .414-.336.75-.75.75s-.75-.336-.75-.75v-1.5c0-.966-.784-1.75-1.75-1.75h-1.974c-.611 0-1.197.249-1.62.69l-4.254 4.417c-.473.49-.466 1.269.016 1.75l2.898 2.898c.385.386 1.008.392 1.4.014l.451-.434c.299-.288.773-.279 1.06.02.288.298.28.773-.02 1.06l-.45.434c-.981.945-2.538.93-3.502-.033l-2.898-2.898c-1.06-1.06-1.075-2.772-.036-3.852l4.254-4.417Z" />
-                                    <path d="M14 7c0 .552-.448 1-1 1s-1-.448-1-1 .448-1 1-1 1 .448 1 1Z" />
-                                    <path d="M13.25 10.857c-.728.257-1.25.952-1.25 1.768 0 1.036.84 1.875 1.875 1.875h.75c.207 0 .375.168.375.375s-.168.375-.375.375h-1.875c-.414 0-.75.336-.75.75s.336.75.75.75h.5v.25c0 .414.336.75.75.75s.75-.336.75-.75v-.254c.977-.064 1.75-.877 1.75-1.871 0-1.036-.84-1.875-1.875-1.875h-.75c-.207 0-.375-.168-.375-.375s.168-.375.375-.375h1.875c.414 0 .75-.336.75-.75s-.336-.75-.75-.75h-1v-.25c0-.414-.336-.75-.75-.75s-.75.336-.75.75v.357Z" />
-                                  </svg>
-                                </IconButton>
-                              </td>
-                            </tr>
-                          );
-                        })}
-                      </tbody>
-                    </table>
-                  </Card>
-
-                  {modal && (
-                    <TransactionStudentModal
-                      open={modal}
-                      onClose={handleCloseModal}
-                      data={studentDetail}
-                    />
-                  )}
-                </div>
+                )}
               </div>
+              
+              {/* Danh sách học sinh */}
+              <Card className="h-full w-full overflow-hidden">
+                <div 
+                  className="overflow-auto max-h-[calc(100vh-300px)]" 
+                  ref={tableRef}
+                >
+                  <table className="w-full min-w-max table-auto text-left">
+                    <thead>
+                      <TableHeader />
+                    </thead>
+                    <tbody>
+                      {renderTableBody()}
+                    </tbody>
+                  </table>
+                </div>
+              </Card>
             </div>
           </div>
-        </>
-      )}
+        </div>
+      </div>
     </>
   );
 };
 
-export default SearchStudent;
+export default memo(SearchStudent);

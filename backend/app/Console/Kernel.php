@@ -14,7 +14,6 @@ class Kernel extends ConsoleKernel
      */
     protected $commands = [
         Commands\MigrateWithHostDetection::class,
-        Commands\ImportStudentBalances::class,
     ];
 
     /**
@@ -23,6 +22,9 @@ class Kernel extends ConsoleKernel
     protected function schedule(Schedule $schedule): void
     {
         // $schedule->command('inspire')->hourly();
+        $schedule->command('tuition:create-monthly-records')
+        ->dailyAt('00:01')
+        ->timezone('Asia/Bangkok');
     }
 
     /**
