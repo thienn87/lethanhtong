@@ -32,7 +32,7 @@ const FeeRow = React.memo(({
       const numericValue = parseInt(rawValue.replace(/[^\d]/g, ''), 10);
       setFormattedAmount(isNaN(numericValue) ? "" : formatCurrency(numericValue));
       handlePaidAmount(code, isNaN(numericValue) ? "" : numericValue);
-    }, 300),
+    }, 50),
     [formatCurrency, handlePaidAmount]
   );
 
@@ -43,7 +43,7 @@ const FeeRow = React.memo(({
       setFormattedAmount(isNaN(numericValue) ? "" : formatCurrency(numericValue));
       handleDebt(code, isNaN(numericValue) ? 0 : numericValue);
       handlePaidAmount(code, isNaN(numericValue) ? 0 : numericValue);
-    }, 300),
+    }, 50),
     [formatCurrency, handleDebt, handlePaidAmount]
   );
 
@@ -212,7 +212,7 @@ const TransactionTable = ({
         setTotalPaymentAmount(numericValue);
         distributePayment(numericValue);
       }
-    }, 100),
+    }, 50),
     [formatCurrency, setTotalPaymentAmount, distributePayment]
   );
 

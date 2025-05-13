@@ -195,7 +195,7 @@ class TuitionMonthlyFeeListingController extends Controller
         // Preload students
         $students = DB::table('students')
             ->where('grade', '!=', '13')
-            ->where('leave_school', false)
+            ->where('leave_school', 'false')
             ->get();
             //->where('grade', '!=', '13')
         // Preload invoices and transactions for the given year/month
@@ -245,13 +245,11 @@ class TuitionMonthlyFeeListingController extends Controller
             // Calculate dudau
             $previousFee = $previousFees->get($student_mshs);
             $dudau = $previousFee
-                ? $this->normalizeJsonField($previousFee->duno)
+                ? $previousFee->duno
                 : $this->calculateDetailedDuno($student, 0);
-
             // Adjust phaithu based on dudau
             // Calculate duno
             $duno = $this->calculateDuno($dudau, $phaithu, $dathu);
-
             // Get invoice IDs
             $invoiceIds = $invoices->get($student_mshs, collect([]))->pluck('id')->toArray();
           
@@ -339,7 +337,7 @@ class TuitionMonthlyFeeListingController extends Controller
         }
         
         if (!isset($array['total'])) {
-            $array['total'] = isset($array['totalamount']) ? $array['totalamount'] : 0;
+            $array['total'] = isset($array['total']) ? $array['total'] : 0;
         }
         
         if (!isset($array['details']) || !is_array($array['details'])) {
@@ -393,9 +391,10 @@ class TuitionMonthlyFeeListingController extends Controller
             return ['total' => floatval($value), 'details' => []];
         } elseif (is_string($value)) {
             $decoded = json_decode($value, true) ?? ['total' => 0, 'details' => []];
-            if (isset($decoded['totalamount']) && !isset($decoded['total'])) {
-                $decoded['total'] = $decoded['totalamount'];
-                unset($decoded['totalamount']);
+            $result = is_array($value) ? $value : ['total' => 0, 'details' => []];
+            if (isset($result['totalamount']) && !isset($result['total'])) {
+                $result['total'] = $result['totalamount'];
+                unset($result['totalamount']);
             }
             return $decoded;
         } else {
@@ -403,7 +402,6 @@ class TuitionMonthlyFeeListingController extends Controller
             return $result;
         }
     }
-
     /**
      * API to generate fee records for a specific month and year (for backfilling old data).
      */
@@ -490,35 +488,44 @@ class TuitionMonthlyFeeListingController extends Controller
             ], 422);
         }
 
-        // Build mahs => sddk map
+        // Build mahs => sddk map, ensuring MSHS is treated as a string
         $mahsSddkMap = collect(array_slice($rows, 1))
             ->filter(fn($row) => !empty(trim($row[$mahsCol] ?? '')) && isset($row[$sddkCol]))
-            ->mapWithKeys(fn($row) => [trim($row[$mahsCol]) => floatval($row[$sddkCol])])
+            ->mapWithKeys(function($row) use ($mahsCol, $sddkCol) {
+                // Ensure MSHS is treated as a string
+                $mshs = (string)trim($row[$mahsCol]);
+                return [$mshs => floatval($row[$sddkCol])];
+            })
             ->toArray();
 
         [$year, $month] = explode('-', $request->year_month);
         $year = (int)$year;
         $month = (int)$month;
 
-        // Preload students
+        // Get array of MSHS as strings
+        $mshsArray = array_map(function($mshs) {
+            return (string)$mshs;
+        }, array_keys($mahsSddkMap));
+
+        // Preload students, ensuring MSHS is treated as a string in the query
         $students = DB::table('students')
-            ->whereIn('mshs', array_keys($mahsSddkMap))
+            ->whereIn('mshs', $mshsArray) // Pass array of strings
             ->get()
             ->keyBy('mshs');
 
         // Preload tuition groups
-
         $tuitionGroups = Cache::remember("tuition_groups_month_{$month}", now()->addHours(24), function () use ($month) {
             return TuitionGroup::select('code', 'name', 'default_amount', 'grade', 'group', 'month_apply')
                 ->whereRaw("(',' || month_apply || ',') LIKE '%,$month,%'")
                 ->get()
                 ->groupBy('grade');
         });
+        
         // Preload invoices and transactions
         $invoices = DB::table('invoices')
             ->whereYear('created_at', $year)
             ->whereMonth('created_at', $month)
-            ->whereIn('mshs', array_keys($mahsSddkMap))
+            ->whereIn('mshs', $mshsArray) // Pass array of strings
             ->get()
             ->groupBy('mshs');
 
@@ -535,23 +542,26 @@ class TuitionMonthlyFeeListingController extends Controller
 
         // Preload existing listings
         $listings = TuitionMonthlyFeeListing::where('year_month', $request->year_month)
-            ->whereIn('mshs', array_keys($mahsSddkMap))
+            ->whereIn('mshs', $mshsArray) // Pass array of strings
             ->get()
             ->keyBy('mshs');
 
         $updated = 0;
         $notFound = [];
 
-        foreach ($mahsSddkMap as $mahs => $sddk) {
-            $student = $students->get($mahs);
+        foreach ($mahsSddkMap as $mshs => $sddk) {
+            // Ensure MSHS is treated as a string
+            $mshs = (string)$mshs;
+            
+            $student = $students->get($mshs);
             if (!$student) {
-                $notFound[] = $mahs;
+                $notFound[] = $mshs;
                 continue;
             }
 
-            $listing = $listings->get($mahs);
+            $listing = $listings->get($mshs);
             if (!$listing) {
-                $notFound[] = $mahs;
+                $notFound[] = $mshs;
                 continue;
             }
 
@@ -560,18 +570,18 @@ class TuitionMonthlyFeeListingController extends Controller
             $discount = $student->discount;
             $phaithu = $this->calculatePhaithu($tuitions, $discount);
             $mahp = implode(',', $tuitions->pluck('code')->toArray());
-            $dathu = $this->calculateDathu($invoices->get($mahs, collect([])), $transactions);
+            $dathu = $this->calculateDathu($invoices->get($mshs, collect([])), $transactions);
             $dudau = $this->calculateDetailedDuno($student, $sddk);
             $duno = $this->calculateDuno($dudau, $phaithu, $dathu);
-            $invoiceIds = $invoices->get($mahs, collect([]))->pluck('id')->toArray();
+            $invoiceIds = $invoices->get($mshs, collect([]))->pluck('id')->toArray();
 
             $listing->update([
                 'tuitions' => $mahp,
-                'dudau' => json_encode($dudau),
-                'phaithu' => json_encode($phaithu),
-                'dathu' => json_encode($dathu),
-                'duno' => json_encode($duno),
-                'invoice_ids' => json_encode($invoiceIds),
+                'dudau' => $dudau,
+                'phaithu' => $phaithu,
+                'dathu' => $dathu,
+                'duno' => $duno,
+                'invoice_ids' => $invoiceIds,
                 'updated_at' => now(),
             ]);
 
@@ -688,7 +698,7 @@ class TuitionMonthlyFeeListingController extends Controller
 
         return [
             'details' => $detailData,
-            'totalamount' => $balance,
+            'total' => $balance,
         ];
     }
     /**

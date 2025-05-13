@@ -182,9 +182,10 @@ export const useReceiptData = ({
 
   /**
    * Generate and handle PDF actions
-   * @param {boolean} openInNewTab - Whether to open in new tab
+   * @param {boolean} openInNewTab - Whether to open in new tab (kept for backward compatibility)
+   * @param {boolean} autoPrint - Whether to automatically print the PDF
    */
-  const handlePdfAction = useCallback(async (openInNewTab = false) => {
+  const handlePdfAction = useCallback(async (openInNewTab = true, autoPrint = true) => {
     setPdfLoading(true);
     try {
       // Use the current receipt element in the DOM
@@ -242,20 +243,40 @@ export const useReceiptData = ({
           });
         }
         
-        if (openInNewTab) {
-          // Open PDF in new tab
-          const pdfBlob = pdf.output('blob');
-          const blobUrl = URL.createObjectURL(pdfBlob);
-          window.open(blobUrl, '_blank');
-        } else {
-          // Download the PDF
-          const filename = receiptData?.isSubmitting 
-            ? `bienlai-processing-${studentData?.mshs}-${transactionId}.pdf`
-            : `bienlai-${studentData?.mshs}-${transactionId}.pdf`;
-          pdf.save(filename);
+        // Always open in new tab and auto-print
+        const pdfBlob = pdf.output('blob');
+        const blobUrl = URL.createObjectURL(pdfBlob);
+        
+        // Open in new window with specific features to encourage window instead of tab
+        const windowFeatures = "width=800,height=600,menubar=yes,location=yes,resizable=yes,scrollbars=yes,status=yes";
+        const printWindow = window.open(blobUrl, '_blank', windowFeatures);
+        
+        if (!printWindow) {
+          throw new Error("Không thể mở cửa sổ in. Vui lòng kiểm tra cài đặt trình duyệt của bạn.");
         }
         
-        setToastMessage(openInNewTab ? "Đã mở biên lai trong tab mới" : "Đã tải xuống biên lai");
+        // Clean up the blob URL when the window is closed
+        printWindow.onunload = function() {
+          URL.revokeObjectURL(blobUrl);
+        };
+        
+        // Add script to print and close window after loading
+        printWindow.addEventListener('load', function() {
+          // Add a slight delay to ensure PDF is fully loaded
+          setTimeout(function() {
+            printWindow.print();
+            
+            // Set up event listener for after print
+            printWindow.addEventListener('afterprint', function() {
+              // Auto close after printing with a small delay
+              setTimeout(function() {
+                printWindow.close();
+              }, 500);
+            });
+          }, 1000);
+        });
+        
+        setToastMessage("Đã gửi biên lai đến máy in");
         setShowToast(true);
         setTimeout(() => setShowToast(false), 3000);
       } else {

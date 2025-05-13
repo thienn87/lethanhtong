@@ -420,7 +420,7 @@ class InvoiceController extends Controller
                         'tuition_name' => $tuitionName,
                         'note' => $transaction->note,
                         'paid_code' => $transaction->paid_code,
-                        'amount_paid' => number_format($transaction->amount_paid) . ' VND',
+                        'amount_paid' => number_format($transaction->amount_paid),
                     ];
                 }
                 
@@ -587,7 +587,7 @@ class InvoiceController extends Controller
                 $transactionDetailsText = '';
                 foreach ($transactionDetails as $index => $detail) {
                     $transactionDetailsText .= ($index + 1) . '. ' . $detail['paid_code'] . ': ' . 
-                        number_format($detail['amount_paid']) . ' VND';
+                        number_format($detail['amount_paid']);
                     
                     if ($index < count($transactionDetails) - 1) {
                         $transactionDetailsText .= "\n";
@@ -712,7 +712,7 @@ class InvoiceController extends Controller
                     \PhpOffice\PhpSpreadsheet\Cell\DataType::TYPE_STRING
                 );
                 
-                $sheet->setCellValue('F' . $row, number_format($data['total_amount']) . ' VND');
+                $sheet->setCellValue('F' . $row, number_format($data['total_amount']));
                 $sheet->setCellValue('G' . $row, $data['transaction_details']);
                 $sheet->setCellValue('H' . $row, $data['invoice_details']);
                 $sheet->setCellValue('I' . $row, $data['created_at']);
@@ -760,7 +760,7 @@ class InvoiceController extends Controller
             $sheet->mergeCells('D' . $row . ':E' . $row); // Merge D and E for "TỔNG CỘNG:"
             $sheet->setCellValue('D' . $row, 'TỔNG CỘNG:');
             $sheet->mergeCells('F' . $row . ':G' . $row); // Merge F and G for the amount
-            $sheet->setCellValue('F' . $row, number_format($totalAmount) . ' VND');
+            $sheet->setCellValue('F' . $row, number_format($totalAmount));
             $sheet->mergeCells('H' . $row . ':I' . $row); // Merge H and I for empty space
 
             // Style the total row

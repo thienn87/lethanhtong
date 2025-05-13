@@ -28,6 +28,14 @@ const formatCurrency = (value, showSymbol = true) => {
   }
 };
 
+// Define sortable columns
+const SORTABLE_COLUMNS = {
+  DU_CUOI_THANG_TRUOC: 'du_cuoi_thang_truoc',
+  DATHU: 'dathu',
+  DU_CUOI_THANG_NAY: 'du_cuoi_thang_nay',
+  TONG_DU_CUOI: 'tong_du_cuoi'
+};
+
 const TABLE_HEAD = [
   "MSHS", 
   "Họ và tên", 
@@ -63,6 +71,10 @@ export default function Debt() {
   const [limit, setLimit] = useState(50);
   const [totalPages, setTotalPages] = useState(1);
   const [totalCount, setTotalCount] = useState(0);
+  
+  // Sorting
+  const [sortField, setSortField] = useState('');
+  const [sortDirection, setSortDirection] = useState('asc');
   
   // Data
   const [students, setStudents] = useState([]);
@@ -157,8 +169,52 @@ export default function Debt() {
     setClassName(""); // Reset class selection when grade changes
   };
   
+  // Handle sorting
+  const handleSort = (field) => {
+    // Only allow sorting on specific fields
+    if (!Object.values(SORTABLE_COLUMNS).includes(field)) {
+      return;
+    }
+    
+    // If clicking on the same field, toggle direction
+    if (sortField === field) {
+      setSortDirection(sortDirection === 'asc' ? 'desc' : 'asc');
+    } else {
+      // If clicking on a new field, set it as the sort field and default to ascending
+      setSortField(field);
+      setSortDirection('asc');
+    }
+    
+    // Reset to first page when sorting changes
+    setPage(1);
+  };
+  
+  // Get sort icon based on current sort state
+  const getSortIcon = (field) => {
+    if (sortField !== field) {
+      return (
+        <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4 opacity-30" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M7 16V4m0 0L3 8m4-4l4 4m6 0v12m0 0l4-4m-4 4l-4-4" />
+        </svg>
+      );
+    }
+    
+    if (sortDirection === 'asc') {
+      return (
+        <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4 text-blue-600" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 15l7-7 7 7" />
+        </svg>
+      );
+    } else {
+      return (
+        <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4 text-blue-600" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
+        </svg>
+      );
+    }
+  };
+  
   // Fetch data with debounce
-  // Update the fetchData function in debt.jsx
   const fetchData = useCallback(async () => {
     setIsLoading(true);
     setError(null);
@@ -171,6 +227,12 @@ export default function Debt() {
       queryParams.append("month", month);
       queryParams.append("page", page);
       queryParams.append("limit", limit);
+      
+      // Add sorting parameters if set
+      if (sortField) {
+        queryParams.append("sort_by", sortField);
+        queryParams.append("sort_direction", sortDirection);
+      }
       
       // Fix: Ensure we have a proper API URL
       const apiUrl = `${domain}/api/transaction/student-debts/search?${queryParams.toString()}`;
@@ -209,7 +271,7 @@ export default function Debt() {
     } finally {
       setIsLoading(false);
     }
-  }, [domain, keyword, grade, className, year, month, page, limit]);
+  }, [domain, keyword, grade, className, year, month, page, limit, sortField, sortDirection]);
   
   // Initial data load and when dependencies change
   useEffect(() => {
@@ -259,6 +321,12 @@ export default function Debt() {
       queryParams.append("year", year);
       queryParams.append("month", month);
       queryParams.append("export", true); // Add export flag
+      
+      // Add sorting parameters if set
+      if (sortField) {
+        queryParams.append("sort_by", sortField);
+        queryParams.append("sort_direction", sortDirection);
+      }
       
       // Create the export URL
       const exportUrl = `${domain}/api/transaction/student-debts/search?${queryParams.toString()}`;
@@ -466,17 +534,41 @@ export default function Debt() {
                   <th className="px-4 py-3 text-left text-xs font-semibold text-gray-700 uppercase tracking-wider w-16">
                     Lớp
                   </th>
-                  <th className="px-4 py-3 text-right text-xs font-semibold text-gray-700 uppercase tracking-wider w-36">
-                    Dư cuối tháng trước
+                  <th 
+                    className="px-4 py-3 text-right text-xs font-semibold text-gray-700 uppercase tracking-wider w-36 cursor-pointer hover:bg-gray-200"
+                    onClick={() => handleSort(SORTABLE_COLUMNS.DU_CUOI_THANG_TRUOC)}
+                  >
+                    <div className="flex items-center justify-end">
+                      <span>Dư cuối tháng trước</span>
+                      <span className="ml-1">{getSortIcon(SORTABLE_COLUMNS.DU_CUOI_THANG_TRUOC)}</span>
+                    </div>
                   </th>
-                  <th className="px-4 py-3 text-right text-xs font-semibold text-gray-700 uppercase tracking-wider w-36">
-                    Đã thu
+                  <th 
+                    className="px-4 py-3 text-right text-xs font-semibold text-gray-700 uppercase tracking-wider w-36 cursor-pointer hover:bg-gray-200"
+                    onClick={() => handleSort(SORTABLE_COLUMNS.DATHU)}
+                  >
+                    <div className="flex items-center justify-end">
+                      <span>Đã thu</span>
+                      <span className="ml-1">{getSortIcon(SORTABLE_COLUMNS.DATHU)}</span>
+                    </div>
                   </th>
-                  <th className="px-4 py-3 text-right text-xs font-semibold text-gray-700 uppercase tracking-wider w-36">
-                    Dư cuối tháng này
+                  <th 
+                    className="px-4 py-3 text-right text-xs font-semibold text-gray-700 uppercase tracking-wider w-36 cursor-pointer hover:bg-gray-200"
+                    onClick={() => handleSort(SORTABLE_COLUMNS.DU_CUOI_THANG_NAY)}
+                  >
+                    <div className="flex items-center justify-end">
+                      <span>Dư cuối tháng này</span>
+                      <span className="ml-1">{getSortIcon(SORTABLE_COLUMNS.DU_CUOI_THANG_NAY)}</span>
+                    </div>
                   </th>
-                  <th className="px-4 py-3 text-right text-xs font-semibold text-gray-700 uppercase tracking-wider w-36">
-                    Tổng dư cuối
+                  <th 
+                    className="px-4 py-3 text-right text-xs font-semibold text-gray-700 uppercase tracking-wider w-36 cursor-pointer hover:bg-gray-200"
+                    onClick={() => handleSort(SORTABLE_COLUMNS.TONG_DU_CUOI)}
+                  >
+                    <div className="flex items-center justify-end">
+                      <span>Tổng dư cuối</span>
+                      <span className="ml-1">{getSortIcon(SORTABLE_COLUMNS.TONG_DU_CUOI)}</span>
+                    </div>
                   </th>
                 </tr>
               </thead>

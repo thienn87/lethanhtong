@@ -147,23 +147,9 @@ const ReceiptView = ({
       </DialogBody>
       <DialogFooter className="flex justify-end space-x-4">
         <Button
-          className={pdfLoading ? "bg-gray-300 cursor-not-allowed" : "bg-blue-500 hover:bg-blue-600 transition-colors"}
-          disabled={pdfLoading}
-          onClick={() => handlePdfAction(false)}
-        >
-          {pdfLoading ? (
-            <div className="flex items-center justify-center">
-              <Spinner className="h-4 w-4 mr-2 animate-spin" />
-              <span>Đang tạo PDF...</span>
-            </div>
-          ) : (
-            "Tải xuống PDF"
-          )}
-        </Button>
-        <Button
           className={pdfLoading ? "bg-gray-300 cursor-not-allowed" : "bg-green-500 hover:bg-green-600 transition-colors"}
           disabled={pdfLoading}
-          onClick={() => handlePdfAction(true)}
+          onClick={() => handlePdfAction()}
         >
           {pdfLoading ? (
             <div className="flex items-center justify-center">
@@ -171,7 +157,7 @@ const ReceiptView = ({
               <span>Đang tạo PDF...</span>
             </div>
           ) : (
-            "Mở trong tab mới"
+            "In biên lai"
           )}
         </Button>
       </DialogFooter>

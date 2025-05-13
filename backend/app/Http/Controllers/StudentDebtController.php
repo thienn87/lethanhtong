@@ -6,149 +6,162 @@ use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 use PhpOffice\PhpSpreadsheet\Spreadsheet;
 use PhpOffice\PhpSpreadsheet\Writer\Xlsx;
-use PhpOffice\PhpSpreadsheet\Style\Alignment;
-use PhpOffice\PhpSpreadsheet\Style\Border;
-use PhpOffice\PhpSpreadsheet\Style\Fill;
-use PhpOffice\PhpSpreadsheet\Style\Color;
+use Illuminate\Support\Facades\Log;
 
 class StudentDebtController extends Controller
 {
     /**
-     * Search for student debts with filtering and pagination
-     * 
-     * @param Request $request
-     * @return \Illuminate\Http\JsonResponse
+     * Search for student debts with filtering, pagination, and sorting
      */
     public function search(Request $request)
     {
         try {
-            // Get parameters from request
+            // Get request parameters
             $keyword = $request->input('keyword', '');
             $grade = $request->input('grade', '');
             $class = $request->input('class', '');
             $year = $request->input('year', date('Y'));
             $month = $request->input('month', date('m'));
-            $page = $request->input('page', 1);
-            $limit = $request->input('limit', 50);
-            $exportExcel = $request->input('export', false);
-            
-            // Format year_month for querying
-            $yearMonth = sprintf('%04d-%02d', $year, $month);
-            
-            // Calculate offset for pagination
+            $page = max(1, intval($request->input('page', 1)));
+            $limit = max(10, min(100, intval($request->input('limit', 50))));
             $offset = ($page - 1) * $limit;
             
-            // Build the base query
-            $query = DB::table('students')
+            // Get sorting parameters
+            $sortBy = $request->input('sort_by', '');
+            $sortDirection = strtolower($request->input('sort_direction', 'asc')) === 'desc' ? 'DESC' : 'ASC';
+            
+            // Validate sort field
+            $allowedSortFields = [
+                'du_cuoi_thang_truoc',
+                'dathu',
+                'du_cuoi_thang_nay',
+                'tong_du_cuoi'
+            ];
+            
+            if (!in_array($sortBy, $allowedSortFields)) {
+                $sortBy = ''; // Reset if invalid
+            }
+            
+            // Format year-month
+            $yearMonth = sprintf('%04d-%02d', $year, $month);
+            
+            // Build the base query with PostgreSQL JSON functions
+            $query = DB::table('tuition_monthly_fee_listings as tmfl')
+                ->join('students as s', 's.mshs', '=', 'tmfl.mshs')
                 ->select(
-                    'students.mshs',
-                    'students.name',
-                    'students.sur_name',
-                    'students.grade',
-                    'students.class',
-                    DB::raw('COALESCE(dudau.total, 0) as du_cuoi_thang_truoc'),
-                    DB::raw('COALESCE(dathu.total, 0) as dathu'),
-                    DB::raw('COALESCE(duno_current.total, 0) as du_cuoi_thang_nay'),
-                    DB::raw('COALESCE(duno_latest.total, 0) as tong_du_cuoi')
+                    's.mshs',
+                    's.full_name as ten',
+                    's.grade as khoi',
+                    's.class as lop',
+                    DB::raw("COALESCE((tmfl.dudau::jsonb->>'total')::numeric, 0) as du_cuoi_thang_truoc"),
+                    DB::raw("COALESCE((tmfl.dathu::jsonb->>'total')::numeric, 0) as dathu"),
+                    DB::raw("COALESCE((tmfl.duno::jsonb->>'total')::numeric, 0) as du_cuoi_thang_nay"),
+                    DB::raw("(COALESCE((tmfl.dudau::jsonb->>'total')::numeric, 0) + 
+                            COALESCE((tmfl.duno::jsonb->>'total')::numeric, 0)) as tong_du_cuoi")
                 )
-                ->leftJoin(DB::raw("(
-                    SELECT mshs, (dudau->>'total')::numeric as total
-                    FROM tuition_monthly_fee_listings
-                    WHERE year_month = '{$yearMonth}'
-                ) as dudau"), 'students.mshs', '=', 'dudau.mshs')
-                ->leftJoin(DB::raw("(
-                    SELECT mshs, (dathu->>'total')::numeric as total
-                    FROM tuition_monthly_fee_listings
-                    WHERE year_month = '{$yearMonth}'
-                ) as dathu"), 'students.mshs', '=', 'dathu.mshs')
-                ->leftJoin(DB::raw("(
-                    SELECT mshs, (duno->>'total')::numeric as total
-                    FROM tuition_monthly_fee_listings
-                    WHERE year_month = '{$yearMonth}'
-                ) as duno_current"), 'students.mshs', '=', 'duno_current.mshs')
-                ->leftJoin(DB::raw("(
-                    SELECT t1.mshs, (t1.duno->>'total')::numeric as total
-                    FROM tuition_monthly_fee_listings t1
-                    INNER JOIN (
-                        SELECT mshs, MAX(year_month) as max_yearmonth
-                        FROM tuition_monthly_fee_listings
-                        GROUP BY mshs
-                    ) t2 ON t1.mshs = t2.mshs AND t1.year_month = t2.max_yearmonth
-                ) as duno_latest"), 'students.mshs', '=', 'duno_latest.mshs')
-                ->where('students.leave_school', 'false')
-                ->where('students.grade', '!=', 'LT');
+                ->where('tmfl.year_month', $yearMonth)
+                ->where('s.leave_school', 'false');
             
             // Apply filters
             if (!empty($keyword)) {
                 $query->where(function($q) use ($keyword) {
-                    $q->where('students.mshs', 'like', "%{$keyword}%")
-                      ->orWhere('students.name', 'like', "%{$keyword}%")
-                      ->orWhere('students.sur_name', 'like', "%{$keyword}%");
+                    $q->where('s.mshs', 'like', "%{$keyword}%")
+                      ->orWhere('s.full_name', 'like', "%{$keyword}%");
                 });
             }
             
             if (!empty($grade)) {
-                $query->where('students.grade', $grade);
+                $query->where('s.grade', $grade);
             }
             
             if (!empty($class)) {
-                $query->where('students.class', $class);
+                $query->where('s.class', $class);
             }
             
             // Get total count for pagination
             $totalCount = $query->count();
             $totalPages = ceil($totalCount / $limit);
             
-            // Get paginated results
-            $students = $query->orderBy('students.grade')
-                             ->orderBy('students.class')
-                             ->orderBy('students.name')
-                             ->offset($offset)
-                             ->limit($limit)
-                             ->get();
+            // Apply sorting if specified
+            if (!empty($sortBy)) {
+                $query->orderBy($sortBy, $sortDirection);
+            } else {
+                // Default sorting
+                $query->orderBy('s.grade', 'ASC')
+                      ->orderBy('s.class', 'ASC')
+                      ->orderBy('s.full_name', 'ASC');
+            }
             
-            // Format student data
-            $formattedStudents = $students->map(function($student) {
-                return [
-                    'mshs' => $student->mshs,
-                    'ten' => $student->sur_name . ' ' . $student->name,
-                    'khoi' => $student->grade,
-                    'lop' => $student->class,
-                    'du_cuoi_thang_truoc' => $student->du_cuoi_thang_truoc,
-                    'dathu' => $student->dathu,
-                    'du_cuoi_thang_nay' => $student->du_cuoi_thang_nay,
-                    'tong_du_cuoi' => $student->tong_du_cuoi
-                ];
-            });
+            // Check if export is requested
+            if ($request->has('export') && $request->input('export') === 'true') {
+                return $this->exportToExcel($query, $yearMonth);
+            }
+            
+            // Apply pagination
+            $students = $query->offset($offset)->limit($limit)->get();
             
             // Calculate totals
             $totals = [
-                'du_cuoi_thang_truoc' => $students->sum('du_cuoi_thang_truoc'),
-                'dathu' => $students->sum('dathu'),
-                'du_cuoi_thang_nay' => $students->sum('du_cuoi_thang_nay'),
-                'tong_du_cuoi' => $students->sum('tong_du_cuoi')
+                'du_cuoi_thang_truoc' => 0,
+                'dathu' => 0,
+                'du_cuoi_thang_nay' => 0,
+                'tong_du_cuoi' => 0
             ];
             
-            // Export to Excel if requested
-            if ($exportExcel) {
-                return $this->exportToExcel($formattedStudents, $totals, $year, $month);
+            // Get totals from all records (not just the paginated ones)
+            $totalsQuery = DB::table('tuition_monthly_fee_listings as tmfl')
+                ->join('students as s', 's.mshs', '=', 'tmfl.mshs')
+                ->select(
+                    DB::raw("SUM(COALESCE((tmfl.dudau::jsonb->>'total')::numeric, 0)) as du_cuoi_thang_truoc"),
+                    DB::raw("SUM(COALESCE((tmfl.dathu::jsonb->>'total')::numeric, 0)) as dathu"),
+                    DB::raw("SUM(COALESCE((tmfl.duno::jsonb->>'total')::numeric, 0)) as du_cuoi_thang_nay"),
+                    DB::raw("SUM(COALESCE((tmfl.dudau::jsonb->>'total')::numeric, 0) + 
+                            COALESCE((tmfl.duno::jsonb->>'total')::numeric, 0)) as tong_du_cuoi")
+                )
+                ->where('tmfl.year_month', $yearMonth)
+                ->where('s.leave_school', 'false');
+            
+            // Apply the same filters to the totals query
+            if (!empty($keyword)) {
+                $totalsQuery->where(function($q) use ($keyword) {
+                    $q->where('s.mshs', 'like', "%{$keyword}%")
+                      ->orWhere('s.full_name', 'like', "%{$keyword}%");
+                });
             }
             
-            // Return JSON response
+            if (!empty($grade)) {
+                $totalsQuery->where('s.grade', $grade);
+            }
+            
+            if (!empty($class)) {
+                $totalsQuery->where('s.class', $class);
+            }
+            
+            $totalsResult = $totalsQuery->first();
+            
+            if ($totalsResult) {
+                $totals = [
+                    'du_cuoi_thang_truoc' => $totalsResult->du_cuoi_thang_truoc ?? 0,
+                    'dathu' => $totalsResult->dathu ?? 0,
+                    'du_cuoi_thang_nay' => $totalsResult->du_cuoi_thang_nay ?? 0,
+                    'tong_du_cuoi' => $totalsResult->tong_du_cuoi ?? 0
+                ];
+            }
+            
             return response()->json([
                 'success' => true,
-                'data' => $formattedStudents,
-                'totals' => $totals,
+                'data' => $students,
                 'totalCount' => $totalCount,
                 'totalPages' => $totalPages,
                 'currentPage' => $page,
-                'year' => $year,
-                'month' => $month
+                'totals' => $totals
             ]);
+            
         } catch (\Exception $e) {
+            Log::error('Error in student debt search: ' . $e->getMessage());
             return response()->json([
                 'success' => false,
-                'message' => 'Failed to search student debts: ' . $e->getMessage()
+                'message' => 'Error retrieving student debts: ' . $e->getMessage()
             ], 500);
         }
     }
@@ -222,201 +235,113 @@ class StudentDebtController extends Controller
     }
     
     /**
-     * Export student debt data to Excel
-     * 
-     * @param array $students
-     * @param array $totals
-     * @param int $year
-     * @param int $month
-     * @return \Illuminate\Http\Response
+     * Export student debts to Excel
      */
-    private function exportToExcel($students, $totals, $year, $month)
+    private function exportToExcel($query, $yearMonth)
     {
-        // Create new Spreadsheet
-        $spreadsheet = new Spreadsheet();
-        $sheet = $spreadsheet->getActiveSheet();
-        
-        // Set column widths
-        $sheet->getColumnDimension('A')->setWidth(15); // MSHS
-        $sheet->getColumnDimension('B')->setWidth(30); // Họ và tên
-        $sheet->getColumnDimension('C')->setWidth(10); // Khối
-        $sheet->getColumnDimension('D')->setWidth(10); // Lớp
-        $sheet->getColumnDimension('E')->setWidth(20); // Dư cuối tháng trước
-        $sheet->getColumnDimension('F')->setWidth(20); // Đã thu
-        $sheet->getColumnDimension('G')->setWidth(20); // Dư cuối tháng này
-        $sheet->getColumnDimension('H')->setWidth(20); // Tổng dư cuối
-        
-        // Set title
-        $sheet->setCellValue('A1', 'DANH SÁCH CÔNG NỢ HỌC SINH');
-        $sheet->mergeCells('A1:H1');
-        $sheet->getStyle('A1')->getFont()->setBold(true)->setSize(16);
-        $sheet->getStyle('A1')->getAlignment()->setHorizontal(Alignment::HORIZONTAL_CENTER);
-        
-        // Set subtitle with month and year
-        $sheet->setCellValue('A2', "Tháng {$month} năm {$year}");
-        $sheet->mergeCells('A2:H2');
-        $sheet->getStyle('A2')->getFont()->setBold(true)->setSize(14);
-        $sheet->getStyle('A2')->getAlignment()->setHorizontal(Alignment::HORIZONTAL_CENTER);
-        
-        // Set headers
-        $headers = [
-            'A4' => 'MSHS',
-            'B4' => 'Họ và tên',
-            'C4' => 'Khối',
-            'D4' => 'Lớp',
-            'E4' => 'Dư cuối tháng trước',
-            'F4' => 'Đã thu',
-            'G4' => 'Dư cuối tháng này',
-            'H4' => 'Tổng dư cuối'
-        ];
-        
-        foreach ($headers as $cell => $value) {
-            $sheet->setCellValue($cell, $value);
-        }
-        
-        // Style headers
-        $headerStyle = [
-            'font' => [
-                'bold' => true,
-            ],
-            'fill' => [
-                'fillType' => Fill::FILL_SOLID,
-                'startColor' => [
-                    'rgb' => 'D9D9D9', // Light gray
-                ],
-            ],
-            'borders' => [
-                'allBorders' => [
-                    'borderStyle' => Border::BORDER_THIN,
-                ],
-            ],
-            'alignment' => [
-                'horizontal' => Alignment::HORIZONTAL_CENTER,
-                'vertical' => Alignment::VERTICAL_CENTER,
-            ],
-        ];
-        
-        $sheet->getStyle('A4:H4')->applyFromArray($headerStyle);
-        
-        // Add data
-        $row = 5;
-        foreach ($students as $student) {
-            $sheet->setCellValue('A' . $row, $student['mshs']);
-            $sheet->setCellValue('B' . $row, $student['ten']);
-            $sheet->setCellValue('C' . $row, $student['khoi']);
-            $sheet->setCellValue('D' . $row, $student['lop']);
-            $sheet->setCellValue('E' . $row, $student['du_cuoi_thang_truoc']);
-            $sheet->setCellValue('F' . $row, $student['dathu']);
-            $sheet->setCellValue('G' . $row, $student['du_cuoi_thang_nay']);
-            $sheet->setCellValue('H' . $row, $student['tong_du_cuoi']);
+        try {
+            // Get all records for export (no pagination)
+            $students = $query->get();
             
-            // Format numbers
-            $sheet->getStyle('E' . $row)->getNumberFormat()->setFormatCode('#,##0');
-            $sheet->getStyle('F' . $row)->getNumberFormat()->setFormatCode('#,##0');
-            $sheet->getStyle('G' . $row)->getNumberFormat()->setFormatCode('#,##0');
-            $sheet->getStyle('H' . $row)->getNumberFormat()->setFormatCode('#,##0');
+            // Create new Spreadsheet
+            $spreadsheet = new Spreadsheet();
+            $sheet = $spreadsheet->getActiveSheet();
             
-            // Color negative numbers red, positive green
-            if ($student['du_cuoi_thang_truoc'] < 0) {
-                $sheet->getStyle('E' . $row)->getFont()->getColor()->setRGB('FF0000');
-            } else if ($student['du_cuoi_thang_truoc'] > 0) {
-                $sheet->getStyle('E' . $row)->getFont()->getColor()->setRGB('008000');
+            // Set headers
+            $sheet->setCellValue('A1', 'MSHS');
+            $sheet->setCellValue('B1', 'Họ và tên');
+            $sheet->setCellValue('C1', 'Khối');
+            $sheet->setCellValue('D1', 'Lớp');
+            $sheet->setCellValue('E1', 'Dư cuối tháng trước');
+            $sheet->setCellValue('F1', 'Đã thu');
+            $sheet->setCellValue('G1', 'Dư cuối tháng này');
+            $sheet->setCellValue('H1', 'Tổng dư cuối');
+            
+            // Style headers
+            $headerStyle = [
+                'font' => [
+                    'bold' => true,
+                ],
+                'alignment' => [
+                    'horizontal' => \PhpOffice\PhpSpreadsheet\Style\Alignment::HORIZONTAL_CENTER,
+                ],
+                'fill' => [
+                    'fillType' => \PhpOffice\PhpSpreadsheet\Style\Fill::FILL_SOLID,
+                    'startColor' => [
+                        'rgb' => 'E0E0E0',
+                    ],
+                ],
+            ];
+            
+            $sheet->getStyle('A1:H1')->applyFromArray($headerStyle);
+            
+            // Add data
+            $row = 2;
+            foreach ($students as $student) {
+                $sheet->setCellValue('A' . $row, $student->mshs);
+                $sheet->setCellValue('B' . $row, $student->ten);
+                $sheet->setCellValue('C' . $row, $student->khoi);
+                $sheet->setCellValue('D' . $row, $student->lop);
+                $sheet->setCellValue('E' . $row, $student->du_cuoi_thang_truoc);
+                $sheet->setCellValue('F' . $row, $student->dathu);
+                $sheet->setCellValue('G' . $row, $student->du_cuoi_thang_nay);
+                $sheet->setCellValue('H' . $row, $student->tong_du_cuoi);
+                
+                // Format numbers
+                $sheet->getStyle('E' . $row . ':H' . $row)->getNumberFormat()
+                    ->setFormatCode('#,##0');
+                
+                $row++;
             }
             
-            if ($student['dathu'] < 0) {
-                $sheet->getStyle('F' . $row)->getFont()->getColor()->setRGB('FF0000');
-            } else if ($student['dathu'] > 0) {
-                $sheet->getStyle('F' . $row)->getFont()->getColor()->setRGB('008000');
+            // Add totals row
+            $sheet->setCellValue('A' . $row, 'TỔNG');
+            $sheet->setCellValue('E' . $row, '=SUM(E2:E' . ($row - 1) . ')');
+            $sheet->setCellValue('F' . $row, '=SUM(F2:F' . ($row - 1) . ')');
+            $sheet->setCellValue('G' . $row, '=SUM(G2:G' . ($row - 1) . ')');
+            $sheet->setCellValue('H' . $row, '=SUM(H2:H' . ($row - 1) . ')');
+            
+            // Style totals row
+            $totalStyle = [
+                'font' => [
+                    'bold' => true,
+                ],
+                'fill' => [
+                    'fillType' => \PhpOffice\PhpSpreadsheet\Style\Fill::FILL_SOLID,
+                    'startColor' => [
+                        'rgb' => 'F0F0F0',
+                    ],
+                ],
+            ];
+            
+            $sheet->getStyle('A' . $row . ':H' . $row)->applyFromArray($totalStyle);
+            $sheet->getStyle('E' . $row . ':H' . $row)->getNumberFormat()
+                ->setFormatCode('#,##0');
+            
+            // Auto-size columns
+            foreach (range('A', 'H') as $col) {
+                $sheet->getColumnDimension($col)->setAutoSize(true);
             }
             
-            if ($student['du_cuoi_thang_nay'] < 0) {
-                $sheet->getStyle('G' . $row)->getFont()->getColor()->setRGB('FF0000');
-            } else if ($student['du_cuoi_thang_nay'] > 0) {
-                $sheet->getStyle('G' . $row)->getFont()->getColor()->setRGB('008000');
-            }
+            // Create response with Excel file
+            $writer = new Xlsx($spreadsheet);
+            $filename = 'student_debts_' . $yearMonth . '.xlsx';
             
-            if ($student['tong_du_cuoi'] < 0) {
-                $sheet->getStyle('H' . $row)->getFont()->getColor()->setRGB('FF0000');
-            } else if ($student['tong_du_cuoi'] > 0) {
-                $sheet->getStyle('H' . $row)->getFont()->getColor()->setRGB('008000');
-            }
+            // Save to temp file
+            $tempFile = tempnam(sys_get_temp_dir(), 'excel');
+            $writer->save($tempFile);
             
-            $row++;
+            // Return file as download
+            return response()->download($tempFile, $filename, [
+                'Content-Type' => 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+            ])->deleteFileAfterSend(true);
+            
+        } catch (\Exception $e) {
+            Log::error('Error exporting student debts to Excel: ' . $e->getMessage());
+            return response()->json([
+                'success' => false,
+                'message' => 'Error exporting to Excel: ' . $e->getMessage()
+            ], 500);
         }
-        
-        // Add borders to data cells
-        $dataBorderStyle = [
-            'borders' => [
-                'allBorders' => [
-                    'borderStyle' => Border::BORDER_THIN,
-                ],
-            ],
-        ];
-        
-        $sheet->getStyle('A5:H' . ($row - 1))->applyFromArray($dataBorderStyle);
-        
-        // Add total row
-        $sheet->setCellValue('A' . $row, 'TỔNG CỘNG');
-        $sheet->mergeCells('A' . $row . ':D' . $row);
-        $sheet->setCellValue('E' . $row, $totals['du_cuoi_thang_truoc']);
-        $sheet->setCellValue('F' . $row, $totals['dathu']);
-        $sheet->setCellValue('G' . $row, $totals['du_cuoi_thang_nay']);
-        $sheet->setCellValue('H' . $row, $totals['tong_du_cuoi']);
-        
-        // Format total row
-        $totalRowStyle = [
-            'font' => [
-                'bold' => true,
-                'size' => 14,
-            ],
-            'fill' => [
-                'fillType' => Fill::FILL_SOLID,
-                'startColor' => [
-                    'rgb' => 'FFEB9C', // Light yellow
-                ],
-            ],
-            'borders' => [
-                'outline' => [
-                    'borderStyle' => Border::BORDER_MEDIUM,
-                ],
-            ],
-        ];
-        
-        $sheet->getStyle('A' . $row . ':H' . $row)->applyFromArray($totalRowStyle);
-        $sheet->getStyle('A' . $row)->getAlignment()->setHorizontal(Alignment::HORIZONTAL_CENTER);
-        
-        // Format total numbers
-        $sheet->getStyle('E' . $row)->getNumberFormat()->setFormatCode('#,##0');
-        $sheet->getStyle('F' . $row)->getNumberFormat()->setFormatCode('#,##0');
-        $sheet->getStyle('G' . $row)->getNumberFormat()->setFormatCode('#,##0');
-        $sheet->getStyle('H' . $row)->getNumberFormat()->setFormatCode('#,##0');
-        
-        // Color total numbers
-        if ($totals['du_cuoi_thang_truoc'] < 0) {
-            $sheet->getStyle('E' . $row)->getFont()->getColor()->setRGB('FF0000');
-        }
-        
-        if ($totals['dathu'] < 0) {
-            $sheet->getStyle('F' . $row)->getFont()->getColor()->setRGB('FF0000');
-        }
-        
-        if ($totals['du_cuoi_thang_nay'] < 0) {
-            $sheet->getStyle('G' . $row)->getFont()->getColor()->setRGB('FF0000');
-        }
-        
-        if ($totals['tong_du_cuoi'] < 0) {
-            $sheet->getStyle('H' . $row)->getFont()->getColor()->setRGB('FF0000');
-        }
-        
-        // Create file
-        $writer = new Xlsx($spreadsheet);
-        $filename = "student_debts_{$month}_{$year}_" . date('Y-m-d') . ".xlsx";
-        $tempPath = storage_path('app/public/' . $filename);
-        $writer->save($tempPath);
-        
-        // Return file for download
-        return response()->download($tempPath, $filename, [
-            'Content-Type' => 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
-        ])->deleteFileAfterSend(true);
     }
 }

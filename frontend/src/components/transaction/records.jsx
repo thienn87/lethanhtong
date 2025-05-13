@@ -386,7 +386,7 @@ function Records() {
                 </td>
                 <td className="p-4">
                   <Typography variant="small" color="green" className="font-medium">
-                    {formatAmount(transaction.amount_paid)} VND
+                    {formatAmount(transaction.amount_paid)}
                   </Typography>
                 </td>
                 <td className="p-4">
@@ -406,7 +406,7 @@ function Records() {
                 <Typography variant="small" color="green" className="font-bold">
                   {formatAmount(
                     transactions.reduce((sum, t) => sum + (parseFloat(t.amount_paid) || 0), 0)
-                  )} VND
+                  )}
                 </Typography>
               </td>
               <td className="p-4"></td>
@@ -480,7 +480,7 @@ function Records() {
                 Tổng tiền
               </Typography>
               <Typography color="green" className="font-bold text-xl">
-                {formatAmount(invoice.amount_paid)} VND
+                {formatAmount(invoice.amount_paid)}
               </Typography>
             </div>
           </div>
@@ -610,7 +610,7 @@ function Records() {
                       </td>
                       <td className={classes}>
                         <Typography variant="small" color="green" className="font-semibold">
-                          {formatAmount(invoice.amount_paid)} VND
+                          {formatAmount(invoice.amount_paid)}
                         </Typography>
                       </td>
                       <td className={classes}>

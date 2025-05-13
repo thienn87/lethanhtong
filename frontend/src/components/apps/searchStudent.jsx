@@ -36,6 +36,24 @@ const TableHeader = memo(() => (
   </tr>
 ));
 
+// Memoized expanded content component to prevent unnecessary re-renders
+const ExpandedContent = memo(({ item, onClose }) => {
+  return (
+    <div className="bg-violet-900 p-4">
+      <Suspense fallback={
+        <div className="flex justify-center items-center py-8">
+          <Spinner className="h-8 w-8 text-white" />
+        </div>
+      }>
+        <TransactionContent 
+          data={item} 
+          onClose={onClose} 
+        />
+      </Suspense>
+    </div>
+  );
+});
+
 // Memoized table row component to prevent unnecessary re-renders
 const StudentRow = memo(({ 
   item, 
@@ -141,17 +159,14 @@ const StudentRow = memo(({
       {isActive && (
         <tr>
           <td colSpan={6} className="p-0 border-b border-blue-gray-300">
-            <div className="bg-violet-900 p-4 transition-all duration-300 ease-in-out">
-              <Suspense fallback={
-                <div className="flex justify-center items-center py-8">
-                  <Spinner className="h-8 w-8 text-white" />
-                </div>
-              }>
-                <TransactionContent 
-                  data={item} 
-                  onClose={() => onToggleExpand(null)} 
-                />
-              </Suspense>
+            <div 
+              className="overflow-hidden" 
+              style={{
+                maxHeight: isActive ? '2000px' : '0',
+                transition: 'max-height 0.3s ease-in-out'
+              }}
+            >
+              <ExpandedContent item={item} onClose={() => onToggleExpand(null)} />
             </div>
           </td>
         </tr>
@@ -184,6 +199,7 @@ const SearchStudent = ({ navigation }) => {
   const initialLoadRef = useRef(true);
   const cacheTimestampRef = useRef(null);
   const tableRef = useRef(null);
+  const expandedContentRef = useRef(null);
 
   const [loading, setLoading] = useState(false);
   const [initialLoading, setInitialLoading] = useState(false);
@@ -409,28 +425,50 @@ const SearchStudent = ({ navigation }) => {
 
   // Toggle expanded row
   const handleToggleExpand = useCallback((student) => {
-    setActiveStudentMshs(prevMshs => {
-      // If clicking on the same student, close the expanded row
-      if (prevMshs === student?.mshs) {
-        return null;
-      }
-      // Otherwise, expand the clicked student
-      return student?.mshs || null;
-    });
-    
-    // Scroll to the expanded row after a short delay to allow rendering
-    if (student) {
-      setTimeout(() => {
-        const activeRow = document.getElementById(`student-row-${student.mshs}`);
-        if (activeRow && tableRef.current) {
-          tableRef.current.scrollTo({
-            top: activeRow.offsetTop - 100,
-            behavior: 'smooth'
-          });
-        }
-      }, 100);
+    // If clicking on the same student, close the expanded row
+    if (activeStudentMshs === student?.mshs) {
+      setActiveStudentMshs(null);
+      return;
     }
-  }, []);
+    
+    // If we're already showing an expanded row, close it first
+    if (activeStudentMshs) {
+      // Use a short timeout to allow for a smooth transition
+      setActiveStudentMshs(null);
+      setTimeout(() => {
+        setActiveStudentMshs(student?.mshs || null);
+        
+        // Scroll to the expanded row after a short delay to allow rendering
+        if (student) {
+          setTimeout(() => {
+            const activeRow = document.getElementById(`student-row-${student.mshs}`);
+            if (activeRow && tableRef.current) {
+              tableRef.current.scrollTo({
+                top: activeRow.offsetTop - 100,
+                behavior: 'smooth'
+              });
+            }
+          }, 100);
+        }
+      }, 50);
+    } else {
+      // Otherwise, just expand the clicked student
+      setActiveStudentMshs(student?.mshs || null);
+      
+      // Scroll to the expanded row after a short delay to allow rendering
+      if (student) {
+        setTimeout(() => {
+          const activeRow = document.getElementById(`student-row-${student.mshs}`);
+          if (activeRow && tableRef.current) {
+            tableRef.current.scrollTo({
+              top: activeRow.offsetTop - 100,
+              behavior: 'smooth'
+            });
+          }
+        }, 100);
+      }
+    }
+  }, [activeStudentMshs]);
 
   const handleDiscountChange = useCallback(() => {
     setHasDiscount(prevState => !prevState);

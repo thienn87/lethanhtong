@@ -33,6 +33,7 @@ const TransactionContent = ({ data, onClose }) => {
   const [modalStatus, setModalStatus] = useState(MODAL_STATUS.UNSUBMITTED);
   const [pendingInvoiceId, setPendingInvoiceId] = useState(null);
   const [feesInitialized, setFeesInitialized] = useState(false);
+  const [processedFees, setProcessedFees] = useState([]);
 
   // Preload TransactionTable and ReceiptView
   useEffect(() => {
@@ -79,11 +80,10 @@ const TransactionContent = ({ data, onClose }) => {
     };
   }, [pendingInvoiceId, domain]);
 
-  
-
   const {
     loading: feeDataLoading,
     feeTable,
+    processedFees: hookProcessedFees,
     currentMonth,
     transactionId,
     error: feeDataError,
@@ -91,16 +91,50 @@ const TransactionContent = ({ data, onClose }) => {
     pendingInvoice,
     totalFeeAmount,
     deletePendingInvoice
-  } = useTuitionFeeData(mshs);
-
-  const [processedFees, setProcessedFees] = useState([]);
-
+  } = useTuitionFeeData(mshs, true); // Pass true to indicate the modal is open
+  
+  // Initialize processedFees from the hook data
   useEffect(() => {
     if (
-      feeTable?.processedFees &&
-      Array.isArray(feeTable.processedFees) &&
+      hookProcessedFees &&
+      Array.isArray(hookProcessedFees) &&
+      hookProcessedFees.length > 0 &&
       !feesInitialized
     ) {
+      const initializedFees = hookProcessedFees
+        .map(fee => ({
+          ...fee,
+          isChecked: true,
+          amount_paid: fee.amount_paid ?? fee.suggested_payment ?? 0,
+          note: fee.note ?? '',
+        }))
+        .sort((a, b) => {
+          const aIsHP = a.code && a.code.includes('HP');
+          const bIsHP = b.code && b.code.includes('HP');
+          if (aIsHP && !bIsHP) return -1;
+          if (!aIsHP && bIsHP) return 1;
+          return 0;
+        });
+      setProcessedFees(initializedFees);
+      setFeesInitialized(true);
+      if (initializedFees.length > 0 && currentMonth) {
+        const newSelectedMaHP = initializedFees.map(fee => fee.code);
+        setSelectedMaHP(newSelectedMaHP);
+        setNoiDungHoaDown(`THU ${newSelectedMaHP.join(", ")} THÁNG ${currentMonth}`);
+      }
+    }
+  }, [hookProcessedFees, feesInitialized, currentMonth]);
+
+  // Fallback to feeTable.processedFees if hookProcessedFees is not available
+  useEffect(() => {
+    if (
+      !hookProcessedFees?.length &&
+      feeTable?.processedFees &&
+      Array.isArray(feeTable.processedFees) &&
+      feeTable.processedFees.length > 0 &&
+      !feesInitialized
+    ) {
+      console.log("Initializing fees from feeTable:", feeTable.processedFees);
       const initializedFees = feeTable.processedFees
         .map(fee => ({
           ...fee,
@@ -123,7 +157,15 @@ const TransactionContent = ({ data, onClose }) => {
         setNoiDungHoaDown(`THU ${newSelectedMaHP.join(", ")} THÁNG ${currentMonth}`);
       }
     }
-  }, [feeTable, feesInitialized, currentMonth]);
+  }, [feeTable, hookProcessedFees, feesInitialized, currentMonth]);
+
+  // Force fetch data if not loaded
+  useEffect(() => {
+    if (mshs && isInitialLoad && !feeDataLoading && !hookProcessedFees?.length && !feeTable?.processedFees?.length) {
+      console.log("Forcing data fetch for MSHS:", mshs);
+      fetchTuitionFeeData("modal");
+    }
+  }, [mshs, isInitialLoad, feeDataLoading, hookProcessedFees, feeTable, fetchTuitionFeeData]);
 
   useEffect(() => {
     if (pendingInvoice && pendingInvoice.id) {
@@ -131,8 +173,6 @@ const TransactionContent = ({ data, onClose }) => {
     }
   }, [pendingInvoice]);
 
-
-  
   const {
     totalPaymentAmount,
     setTotalPaymentAmount,
@@ -192,6 +232,7 @@ const TransactionContent = ({ data, onClose }) => {
       setModalStatus(MODAL_STATUS.SUBMITTED);
     }
   });
+  
   // Sync toast states if needed
   useEffect(() => {
     if (receiptShowToast) {
@@ -291,14 +332,11 @@ const TransactionContent = ({ data, onClose }) => {
     ]);
   }, []);
 
-  
-
-  // Find the handleSubmitTransaction function and replace it with this version
   const handleSubmitTransaction = useCallback(async () => {
     try {
       if (!dataRef.current) {
         console.error("No student data available");
-        setToastMessage("Không có d��� liệu học sinh");
+        setToastMessage("Không có dữ liệu học sinh");
         setShowToast(true);
         setTimeout(() => setShowToast(false), 3000);
         return;
@@ -334,7 +372,7 @@ const TransactionContent = ({ data, onClose }) => {
     setToastMessage,
     setShowToast
   ]);
-  // Add a new function to handle the actual payment submission
+
   const submitPaymentAfterPreview = useCallback(async () => {
     try {
       setLocalIsSubmitting(true);
@@ -367,9 +405,6 @@ const TransactionContent = ({ data, onClose }) => {
         throw new Error(result.message || 'Unknown error occurred');
       }
       
-      // Update receipt with actual data from server using the hook
-      // updateReceiptWithServerData(result.data);
-      
       setPendingInvoiceId(null);
       await fetchTuitionFeeData("invoice");
       setModalStatus(MODAL_STATUS.SUBMITTED);
@@ -399,6 +434,7 @@ const TransactionContent = ({ data, onClose }) => {
     setToastMessage,
     setShowToast
   ]);
+
   const formatCurrency = useCallback((amount) => {
     if (!amount && amount !== 0) return "0";
     return parseFloat(amount).toLocaleString("vi-VN");

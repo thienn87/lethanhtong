@@ -8,8 +8,7 @@ use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Validator;
 use PhpOffice\PhpSpreadsheet\IOFactory;
 use Carbon\Carbon;
-use App\Models\StudentBalance;
-
+use App\Http\Controllers\TuitionMonthlyFeeListingController;
 class StudentImportController extends Controller
 {
     public function import(Request $request)
@@ -80,7 +79,9 @@ class StudentImportController extends Controller
             
             // Get the highest MSHS value from the database to start from
             $latestStudent = Student::orderBy('mshs', 'desc')->first();
-            $nextMshs = $latestStudent ? (intval($latestStudent->mshs) + 1) : 100001;
+            
+            // Modified: Convert to string to ensure proper handling of MSHS
+            $nextMshs = $latestStudent ? (string)((int)$latestStudent->mshs + 1) : '100001';
 
             foreach ($dataRows as $index => $row) {
                 $rowNumber = $index + 2; // +2 because index starts at 0 and we skip header row
@@ -111,9 +112,9 @@ class StudentImportController extends Controller
                 }
 
                 // Process boolean fields
-                $stayIn = filter_var($rowData['stay_in'], FILTER_VALIDATE_BOOLEAN);
-                $leaveSchool = filter_var($rowData['leave_school'], FILTER_VALIDATE_BOOLEAN);
-                $failGrade = filter_var($rowData['fail_grade'], FILTER_VALIDATE_BOOLEAN);
+                $stayIn = $rowData['stay_in'];
+                $leaveSchool = $rowData['leave_school'];
+                $failGrade = $rowData['fail_grade'];
 
                 // Process date fields
                 try {
@@ -125,14 +126,13 @@ class StudentImportController extends Controller
                     continue;
                 }
 
-
-                
                 // Generate a unique MSHS (student ID)
                 $newMshs = $nextMshs;
                 
                 // Check if this MSHS already exists in the database
                 while (Student::where('mshs', $newMshs)->exists() || in_array($newMshs, $usedMshs)) {
-                    $nextMshs++;
+                    // Modified: Increment as string to ensure proper handling of MSHS
+                    $nextMshs = (string)((int)$nextMshs + 1);
                     $newMshs = $nextMshs;
                 }
                 
@@ -140,8 +140,9 @@ class StudentImportController extends Controller
                 $usedMshs[] = $newMshs;
                 
                 // Increment for the next student
-                $nextMshs++;
-
+                // Modified: Increment as string to ensure proper handling of MSHS
+                $nextMshs = (string)((int)$nextMshs + 1);
+                $monthlyTuition = new TuitionMonthlyFeeListingController();
                 try {
                     // Create student record
                     Student::create([
@@ -163,10 +164,7 @@ class StudentImportController extends Controller
                         'day_out' => $dayOut,
                         'fail_grade' => $failGrade,
                     ]);
-                    StudentBalance::create([
-                        'mshs' => $newMshs,
-                        'balance' => 0
-                    ]);
+                    $monthlyTuition->addNewStudentToTuitionMonthlyGroup($newMshs);
                     $importedCount++;
                 } catch (\Exception $e) {
                     Log::error('Error importing student: ' . $e->getMessage());

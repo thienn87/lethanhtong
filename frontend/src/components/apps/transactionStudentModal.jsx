@@ -3,7 +3,6 @@ import { Dialog, DialogHeader, DialogBody, DialogFooter, Button, Spinner } from 
 import { format } from "date-fns";
 import { Config } from "../config";
 import { XMarkIcon } from "@heroicons/react/24/outline";
-import { Toast } from "../polaris/toast";
 import { useTuitionFeeData } from "./hooks/useTuitionFeeData";
 import { usePaymentDistribution } from "./hooks/usePaymentDistribution";
 import { useReceiptData } from "./hooks/useReceiptData";
@@ -30,27 +29,23 @@ const TransactionStudentModal = ({ isOpen, onClose, mshs, studentName, studentCl
   const [modalStatus, setModalStatus] = useState(MODAL_STATUS.UNSUBMITTED);
   const [pendingInvoiceId, setPendingInvoiceId] = useState(null);
   const [feesInitialized, setFeesInitialized] = useState(false);
-  const [dataFetchInitiated, setDataFetchInitiated] = useState(false);
   const [processedFees, setProcessedFees] = useState([]);
-  
-  // Create a data reference for the student using the passed data or defaults
+  const [isPrinting, setIsPrinting] = useState(false);
+
   const dataRef = useRef({
-    mshs: mshs,
+    mshs,
     name: studentName,
     grade: studentClass ? studentClass.charAt(0) : "",
     class: studentClass ? studentClass.substring(1) : "",
     sur_name: studentData?.sur_name || "",
     full_name: studentData?.full_name || studentName,
-    // Include any other fields that might be needed
   });
 
-  // Update dataRef when studentData changes
   useEffect(() => {
     if (studentData) {
       dataRef.current = {
         ...dataRef.current,
         ...studentData,
-        // Ensure these fields are always set correctly
         mshs: mshs || studentData.mshs,
         name: studentData.name || studentName,
         grade: studentData.grade || (studentClass ? studentClass.charAt(0) : ""),
@@ -60,8 +55,7 @@ const TransactionStudentModal = ({ isOpen, onClose, mshs, studentName, studentCl
   }, [studentData, mshs, studentName, studentClass]);
 
   const currentDay = useMemo(() => format(new Date(), "dd/MM/yyyy"), []);
-  
-  // Use the tuition fee data hook
+
   const {
     loading: feeDataLoading,
     feeTable,
@@ -72,9 +66,8 @@ const TransactionStudentModal = ({ isOpen, onClose, mshs, studentName, studentCl
     pendingInvoice,
     totalFeeAmount,
     deletePendingInvoice
-  } = useTuitionFeeData(mshs);
-  console.log('aaa');
-  // Initialize fees from feeTable
+  } = useTuitionFeeData(mshs, isOpen);
+
   useEffect(() => {
     if (
       feeTable?.processedFees &&
@@ -105,14 +98,12 @@ const TransactionStudentModal = ({ isOpen, onClose, mshs, studentName, studentCl
     }
   }, [feeTable, feesInitialized, currentMonth]);
 
-  // Set pending invoice ID
   useEffect(() => {
     if (pendingInvoice && pendingInvoice.id) {
       setPendingInvoiceId(pendingInvoice.id);
     }
   }, [pendingInvoice]);
 
-  // Use the payment distribution hook
   const {
     totalPaymentAmount,
     setTotalPaymentAmount,
@@ -120,7 +111,6 @@ const TransactionStudentModal = ({ isOpen, onClose, mshs, studentName, studentCl
     handleTotalPaymentChange
   } = usePaymentDistribution(processedFees, setProcessedFees);
 
-  // Prepare transaction data for submission
   const prepareTransactionData = useCallback(() => {
     return processedFees
       .filter(fee => fee.isChecked)
@@ -145,8 +135,7 @@ const TransactionStudentModal = ({ isOpen, onClose, mshs, studentName, studentCl
         };
       });
   }, [processedFees]);
- 
-  // Use the receipt data hook
+
   const {
     receiptData,
     receiptRef,
@@ -168,33 +157,26 @@ const TransactionStudentModal = ({ isOpen, onClose, mshs, studentName, studentCl
     prepareTransactionData,
     domain,
     pendingInvoiceId,
-    onSuccess: async (data) => {
+    onSuccess: async () => {
       setPendingInvoiceId(null);
-      await fetchTuitionFeeData("invoice");
       setModalStatus(MODAL_STATUS.SUBMITTED);
+      setShowReceipt(true);
     }
   });
- 
-  // Sync toast states
+
   useEffect(() => {
     if (receiptShowToast) {
       setShowToast(true);
       setToastMessage(receiptToastMessage);
-      
-      const timer = setTimeout(() => {
-        setShowToast(false);
-      }, 3000);
-      
+      const timer = setTimeout(() => setShowToast(false), 3000);
       return () => clearTimeout(timer);
     }
   }, [receiptShowToast, receiptToastMessage]);
 
-  // Handle noi dung change
   const handleNoiDungChange = useCallback((event) => {
     setNoiDungHoaDown(event.target.value);
   }, []);
 
-  // Show table when fees are loaded
   useEffect(() => {
     if (processedFees && processedFees.length > 0) {
       setIsInitialLoad(false);
@@ -202,7 +184,6 @@ const TransactionStudentModal = ({ isOpen, onClose, mshs, studentName, studentCl
     }
   }, [processedFees]);
 
-  // Update modal status when receipt is shown
   useEffect(() => {
     if (showReceipt) {
       setModalStatus(MODAL_STATUS.VIEWING_RECEIPT);
@@ -211,7 +192,6 @@ const TransactionStudentModal = ({ isOpen, onClose, mshs, studentName, studentCl
     }
   }, [showReceipt, modalStatus]);
 
-  // Handle checkbox change
   const handleCheck = useCallback((code, status) => {
     setProcessedFees(prev => {
       const newData = prev.map(fee =>
@@ -229,42 +209,36 @@ const TransactionStudentModal = ({ isOpen, onClose, mshs, studentName, studentCl
     });
   }, [currentMonth]);
 
-  // Handle paid amount change
   const handlePaidAmount = useCallback((code, amount_paid) => {
     setProcessedFees(prev => prev.map(fee =>
       fee.code === code ? { ...fee, amount_paid, isAmountModified: true } : fee
     ));
   }, []);
 
-  // Handle debt amount change
   const handleDebt = useCallback((code, default_amount) => {
     setProcessedFees(prev => prev.map(fee =>
       fee.code === code ? { ...fee, default_amount } : fee
     ));
   }, []);
 
-  // Handle note change
   const handleNote = useCallback((code, note) => {
     setProcessedFees(prev => prev.map(fee =>
       fee.code === code ? { ...fee, note } : fee
     ));
   }, []);
 
-  // Handle fee code change
   const handleFeeCode = useCallback((code, newCode) => {
     setProcessedFees(prev => prev.map(fee =>
       fee.code === code ? { ...fee, code: newCode } : fee
     ));
   }, []);
 
-  // Handle fee name change
   const handleFeeName = useCallback((code, name) => {
     setProcessedFees(prev => prev.map(fee =>
       fee.code === code ? { ...fee, name } : fee
     ));
   }, []);
 
-  // Add new row
   const addNewRow = useCallback(() => {
     setProcessedFees(prev => [
       ...prev,
@@ -284,14 +258,290 @@ const TransactionStudentModal = ({ isOpen, onClose, mshs, studentName, studentCl
     ]);
   }, []);
 
-  // Handle submit transaction
+  const handlePrintPhieuNhapHoc = useCallback(async () => {
+  try {
+    setIsPrinting(true);
+    const currentMshs = dataRef.current.mshs;
+    
+    if (!currentMshs) {
+      setToastMessage("Không tìm thấy mã số học sinh");
+      setShowToast(true);
+      setTimeout(() => setShowToast(false), 3000);
+      setIsPrinting(false);
+      return;
+    }
+    
+    // Fetch student data
+    const response = await fetch(`${domain}/api/students/search?mshs=${currentMshs}`, {
+      method: 'GET',
+      headers: {
+        'Authorization': `Bearer ${localStorage.getItem('token')}`,
+        'Accept': 'application/json'
+      },
+    });
+    
+    if (!response.ok) {
+      throw new Error(`Lỗi khi lấy thông tin học sinh: ${response.statusText}`);
+    }
+    
+    const { data } = await response.json();
+    if (!data || !data.length) {
+      throw new Error("Không tìm thấy thông tin học sinh");
+    }
+    const student = data[0];
+    
+    // Determine student status
+    const dayIn = new Date(student.day_in);
+    const now = new Date();
+    const interval = (now - dayIn) / (1000 * 60 * 60 * 24);
+    const isNewStudent = interval < 30;
+    const studentStatus = isNewStudent ? 'Mới' : 'Cũ';
+    const stayIn = student.stay_in ? 'Nội trú' : 'Bán trú';
+    
+    // Try to open as a window rather than a tab by specifying window features
+    const windowFeatures = "width=800,height=600,menubar=yes,location=yes,resizable=yes,scrollbars=yes,status=yes";
+    const printWindow = window.open('', '_blank', windowFeatures);
+    
+    if (!printWindow) {
+      throw new Error("Không thể mở cửa sổ in. Vui lòng kiểm tra cài đặt trình duyệt của bạn.");
+    }
+    
+    // Write content directly to the window
+    printWindow.document.open();
+    printWindow.document.write(`
+      <!DOCTYPE html>
+      <html>
+        <head>
+          <title>Phiếu Nhập Học - ${student.mshs}</title>
+          <meta charset="UTF-8">
+          <style>
+            /* Critical fix: Set page size and prevent overflow */
+            @page {
+              size: A5 landscape;
+              margin: 0.5cm;
+            }
+            
+            /* Base styles */
+            html, body {
+              margin: 0;
+              padding: 0;
+              font-family: Arial, sans-serif;
+              font-size: 11pt;
+              background-color: white;
+              width: 210mm;
+              height: 140mm;
+              overflow: hidden;
+              box-sizing: border-box; /* Ensure padding is included */
+            }
+            
+            /* Main container */
+            .phieu-nhap-hoc {
+              padding: 10mm;
+              page-break-inside: avoid;
+              page-break-after: avoid;
+              page-break-before: avoid;
+              box-sizing: border-box;
+              max-height: 128mm; /* Ensure content fits within A5 height */
+            }
+            
+            /* School info */
+            .school-info {
+              text-align: center;
+              margin-bottom: 15px;
+            }
+            
+            .header {
+              font-weight: bold;
+              text-align: center;
+              font-size: 16px;
+              margin-top: 10px;
+            }
+            
+            /* Student info table */
+            table {
+              border-collapse: collapse;
+              width: 100%;
+              margin-bottom: 20px;
+            }
+            
+            table, th, td {
+              border: none;
+              box-sizing: border-box;
+            }
+            
+            td.rightCol_title {
+              width: 130px;
+            }
+            
+            th, td {
+              padding: 5px;
+              text-align: left;
+            }
+            
+            .student-info td:first-child {
+              font-weight: bold;
+              width: 150px;               
+            }
+            
+            .importantCol {
+              font-weight: bold;
+              font-size: 15px;
+            }
+            
+            /* Footer notes */
+            p {
+              margin: 5px 0;
+              line-height: 1.5;
+              font-size: 13px;
+            }
+            
+            /* Print-specific styles */
+            @media print {
+              html, body {
+                width: 210mm;
+                height: 140mm;
+                overflow: hidden;
+                print-color-adjust: exact;
+                -webkit-print-color-adjust: exact;
+              }
+              
+              .no-print {
+                display: none !important;
+              }
+            }
+            
+            /* Controls */
+            .controls {
+              position: fixed;
+              bottom: 20px;
+              left: 0;
+              width: 100%;
+              text-align: center;
+              z-index: 1000;
+            }
+            
+            .btn {
+              padding: 10px 20px;
+              margin: 0 5px;
+              border: none;
+              border-radius: 4px;
+              cursor: pointer;
+              font-weight: bold;
+              color: white;
+            }
+            
+            .btn-print {
+              background-color: #4a6cf7;
+            }
+            
+            .btn-close {
+              background-color: #6c757d;
+            }
+          </style>
+        </head>
+        <body>
+          <div class="phieu-nhap-hoc">
+            <div class="school-info">
+              <div class="header">CÔNG TY TNHH GIÁO DỤC THANH TÍN</div>
+              <div>227 Tân Thắng, Q. Tân Phú TP.HCM</div>
+              <div>ĐT: 028 3810 2686</div>
+            </div>
+            
+            <div class="header" style="margin-bottom: 30px;">PHIẾU NHẬP HỌC</div>
+            
+            <table class="student-info">
+              <tr>
+                <td>Họ và tên:</td>
+                <td colspan="2" class="leftCol-content">${student.sur_name} ${student.name}</td>
+                <td> </td>
+                <td class="rightCol_title">Mã số học sinh:</td>
+                <td colspan="4">${student.mshs}</td>
+              </tr>
+              <tr>
+                <td>Ngày sinh:</td>
+                <td colspan="2">${student.day_of_birth ? format(new Date(student.day_of_birth), 'dd/MM/yyyy') : ''}</td>
+                <td> </td>
+                <td class="rightCol_title">Giới tính:</td>
+                <td colspan="4">${student.gender === 'male' ? 'Nam' : 'Nữ'}</td>
+              </tr>
+              <tr>
+                <td>Lớp:</td>
+                <td colspan="2" class="leftCol-content">${student.grade}${student.class}</td>
+                <td> </td>
+                <td colspan="4" class="importantCol">Ngày nhập học: ${student.day_in ? format(new Date(student.day_in), 'dd/MM/yyyy') : format(new Date(), 'dd/MM/yyyy')}</td>
+              </tr>
+              <tr>
+                <td>Địa chỉ:</td>
+                <td colspan="7">${student.address || ''}</td>
+              </tr>
+              <tr>
+                <td>Phụ huynh:</td>
+                <td colspan="2" class="leftCol-content">${student.parent_name || ''}</td>
+                <td> </td>
+                <td class="rightCol_title">Điện thoại:</td>
+                <td>${student.phone_number || ''}</td>
+              </tr>
+              <tr>
+                <td>Tình trạng HS:</td>
+                <td colspan="2" class="leftCol-content">${studentStatus}</td>
+                <td> </td>
+                <td class="rightCol_title">Phân loại:</td>
+                <td colspan="4">${stayIn}</td>
+              </tr>
+              <tr>
+                <td colspan="3" style="margin: 20px 0 5px; padding-top: 20px">
+                  <p>+ Xin vui lòng kiểm tra lại danh sách lớp trước khi vào học.</p>
+                  <p>+ Học sinh nội trú phải nhập nội trú trước 1 ngày.</p></td>
+                <td colspan="5" style="text-align: center; margin: 20px 0 5px; padding-top: 20px">
+                  Ngày ${format(new Date(), 'dd')} tháng ${format(new Date(), 'MM')} năm ${format(new Date(), 'yyyy')}<br/>
+                  <div>Người lập phiếu</div>
+                </td>
+              </tr>
+            </table>
+          
+          </div>
+         
+          
+          <script>
+            // Wait for all resources to load before printing
+            window.onload = function() {
+              // Add a slight delay to ensure everything is rendered
+              setTimeout(function() {
+                window.print();
+                
+                // Set up event listener for after print
+                window.addEventListener('afterprint', function() {
+                  // Auto close after printing with a small delay
+                  setTimeout(function() {
+                    window.close();
+                  }, 500);
+                });
+              }, 1000); // Increased delay for rendering
+            };
+          </script>
+        </body>
+      </html>
+    `);
+    printWindow.document.close();
+    
+    setToastMessage("Đã mở phiếu nhập học để in");
+    setShowToast(true);
+    setTimeout(() => setShowToast(false), 3000);
+  } catch (error) {
+    console.error("Error generating admission form:", error);
+    setToastMessage(`Lỗi khi tạo phiếu nhập học: ${error.message}`);
+    setShowToast(true);
+    setTimeout(() => setShowToast(false), 3000);
+  } finally {
+    setIsPrinting(false);
+  }
+}, [domain, format]);
+
   const handleSubmitTransaction = useCallback(async () => {
     try {
       if (!dataRef.current) {
-        console.error("No student data available");
         setToastMessage("Không có dữ liệu học sinh");
         setShowToast(true);
-        setTimeout(() => setShowToast(false), 3000);
         return;
       }
       
@@ -299,54 +549,22 @@ const TransactionStudentModal = ({ isOpen, onClose, mshs, studentName, studentCl
       if (!isChecked.length) {
         setToastMessage("Chọn học phí muốn thu");
         setShowToast(true);
-        setTimeout(() => setShowToast(false), 3000);
         return;
       }
       
-      // Generate receipt and submit to API simultaneously
       await generateReceiptAndSubmit();
-      
-      // Show the receipt
-      setModalStatus(MODAL_STATUS.VIEWING_RECEIPT);
-      setShowReceipt(true);
-      
     } catch (error) {
-      console.error("Error in transaction submission:", error.message);
+      console.error("Error in transaction submission:", error);
       setToastMessage(`Đã xảy ra lỗi: ${error.message}`);
       setShowToast(true);
-      setTimeout(() => setShowToast(false), 3000);
     }
-  }, [
-    dataRef,
-    processedFees,
-    generateReceiptAndSubmit,
-    setModalStatus,
-    setShowReceipt,
-    setToastMessage,
-    setShowToast
-  ]);
+  }, [dataRef, processedFees, generateReceiptAndSubmit]);
 
-  // Format currency
   const formatCurrency = useCallback((amount) => {
     if (!amount && amount !== 0) return "0";
     return parseFloat(amount).toLocaleString("vi-VN");
   }, []);
 
-  // Load data when modal opens - optimized to prevent multiple API calls
-  useEffect(() => {
-    if (isOpen && mshs && !dataFetchInitiated) {
-      setDataFetchInitiated(true);
-      fetchTuitionFeeData("tuition");
-      setFeesInitialized(false);
-      setShowReceipt(false);
-      setModalStatus(MODAL_STATUS.UNSUBMITTED);
-    } else if (!isOpen) {
-      // Reset the flag when modal closes
-      setDataFetchInitiated(false);
-    }
-  }, [isOpen, mshs, fetchTuitionFeeData, dataFetchInitiated]);
-
-  // Check if can view receipt
   const canViewReceipt = modalStatus === MODAL_STATUS.SUBMITTED || 
                         (showTable && processedFees.some(fee => fee.isChecked));
 
@@ -355,8 +573,8 @@ const TransactionStudentModal = ({ isOpen, onClose, mshs, studentName, studentCl
   return (
     <Dialog open={isOpen} 
             handler={onClose} 
-            size={ size || "xxl"}
-            className="max-w-6xl mx-auto" >
+            size={size || "xxl"}
+            className="max-w-6xl mx-auto">
       <DialogHeader className="flex justify-between items-center p-4 border-b">
         <h3 className="font-bold text-lg">Thu học phí - {studentName} ({mshs})</h3>
         <Button
@@ -438,20 +656,23 @@ const TransactionStudentModal = ({ isOpen, onClose, mshs, studentName, studentCl
                 <Button
                   className={isSubmitting ? "bg-violet-300 text-white shadow-md" : "bg-violet-700 hover:bg-violet-800 text-white shadow-md"}
                   disabled={isSubmitting || !showTable || modalStatus === MODAL_STATUS.SUBMITTED || !processedFees.some(fee => fee.isChecked)}
-                  onClick={() => {
-                    if (!isSubmitting && modalStatus !== MODAL_STATUS.SUBMITTED) {
-                      handleSubmitTransaction();
-                    }
-                  }}
+                  onClick={handleSubmitTransaction}
                 >
                   {modalStatus === MODAL_STATUS.SUBMITTED ? "Đã thu học phí" : "Thu Học Phí"}
                 </Button>
                 <Button
-                  className={`${canViewReceipt ? "bg-blue-600 hover:bg-blue-700" : "bg-blue-300"} text-white shadow-md`}
-                  disabled={!canViewReceipt}
-                  onClick={() => setShowReceipt(true)}
+                  className={isPrinting ? "bg-green-300 text-white shadow-md" : "bg-green-600 hover:bg-green-700 text-white shadow-md"}
+                  disabled={isPrinting}
+                  onClick={handlePrintPhieuNhapHoc}
                 >
-                  In biên lai
+                  {isPrinting ? (
+                    <div className="flex items-center gap-2">
+                      <Spinner className="h-4 w-4 animate-spin" />
+                      Đang tải...
+                    </div>
+                  ) : (
+                    "In phiếu nhập học"
+                  )}
                 </Button>
               </div>
             </div>
@@ -472,10 +693,7 @@ const TransactionStudentModal = ({ isOpen, onClose, mshs, studentName, studentCl
           )}
         </div>
       </DialogBody>
-      
-      {showToast && (
-        <Toast message={toastMessage} onClose={() => setShowToast(false)} />
-      )}
+   
     </Dialog>
   );
 };

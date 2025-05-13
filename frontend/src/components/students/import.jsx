@@ -156,7 +156,6 @@ function ImportStudents() {
     // Create FormData object to send file
     const formData = new FormData();
     formData.append("file", file);
-
     try {
       const response = await fetch(`${domain}/api/students/import`, {
         method: "POST",
