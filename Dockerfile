@@ -61,20 +61,13 @@ RUN apt-get install -y libxss1
 RUN apt-get install -y libxtst6
 RUN apt-get install -y xdg-utils
 RUN docker-php-ext-install gd
-RUN apt install sqlite3 libsqlite3-dev
+RUN apt install -y sqlite3 libsqlite3-dev
 
 # Set working directory
 WORKDIR /var/www/html
 
 # Copy existing application directory contents
 COPY ./backend /var/www/html
-COPY ./docker-entrypoint.sh /usr/local/bin/docker-entrypoint.sh
-
-# Make entrypoint script executable
-RUN chmod +x /usr/local/bin/docker-entrypoint.sh
-
-# Set permissions
-RUN chown -R www-data:www-data /var/www/html
 
 # Install cron
 RUN apt-get update && apt-get install -y cron
@@ -87,18 +80,18 @@ RUN crontab /etc/cron.d/laravel-scheduler
 # Create the log file
 RUN touch /var/log/cron.log
 
-# Add entrypoint script
+# Add entrypoint script (copy only once)
 COPY docker-entrypoint.sh /usr/local/bin/
 RUN chmod +x /usr/local/bin/docker-entrypoint.sh
+
+# Set permissions
+RUN chown -R www-data:www-data /var/www/html
 
 # Expose port 9000
 EXPOSE 9000
 
 # Set entrypoint
-ENTRYPOINT ["docker-entrypoint.sh"]
+ENTRYPOINT ["/usr/local/bin/docker-entrypoint.sh"]
 
 # Start PHP server
 CMD ["php", "artisan", "serve", "--host=0.0.0.0", "--port=9000"]
-
-
-
