@@ -59,12 +59,6 @@ class TransactionService
             $transaction->payment_date = $transactionData['payment_date'] ?? date('n'); // Current month if not specified
             $transaction->note = $transactionData['note'] ?? null;
             $transaction->save();
-            
-            // Update student balance if needed
-            if (isset($transactionData['update_balance']) && $transactionData['update_balance']) {
-                $this->updateStudentBalance($transactionData['mshs']);
-            }
-            
             DB::commit();
             
             return [
@@ -78,104 +72,6 @@ class TransactionService
                 'status' => 'error',
                 'message' => 'Failed to create transaction: ' . $e->getMessage()
             ];
-        }
-    }
-    
-    /**
-     * Create multiple transactions in a batch
-     *
-     * @param array $transactions Array of transaction data
-     * @param string $mshs Student ID
-     * @param int|null $month Payment month
-     * @return array
-     */
-    public function createBatchTransactions($transactions, $mshs, $month = null)
-    {
-        try {
-            DB::beginTransaction();
-            
-            $createdTransactions = [];
-            $currentMonth = $month ?? date('n');
-            
-            foreach ($transactions as $transaction) {
-                if (!isset($transaction['code']) || !isset($transaction['amount'])) {
-                    continue;
-                }
-                
-                $newTransaction = new Transaction();
-                $newTransaction->mshs = $mshs;
-                $newTransaction->paid_code = $transaction['code'];
-                $newTransaction->amount_paid = $transaction['amount'];
-                $newTransaction->payment_date = $currentMonth;
-                $newTransaction->note = $transaction['note'] ?? null;
-                $newTransaction->save();
-                
-                $createdTransactions[] = $newTransaction;
-            }
-            
-            // Update student balance
-            $this->updateStudentBalance($mshs);
-            
-            DB::commit();
-            
-            return [
-                'status' => 'success',
-                'data' => $createdTransactions
-            ];
-        } catch (\Exception $e) {
-            DB::rollBack();
-            Log::error("Error creating batch transactions: " . $e->getMessage());
-            return [
-                'status' => 'error',
-                'message' => 'Failed to create batch transactions: ' . $e->getMessage()
-            ];
-        }
-    }
-    
-    /**
-     * Update student balance after transactions
-     *
-     * @param string $mshs Student ID
-     * @return bool
-     */
-    private function updateStudentBalance($mshs)
-    {
-        try {
-            // Get all transactions for this student
-            $transactions = Transaction::where('mshs', $mshs)->get();
-            
-            // Calculate total balance
-            $totalBalance = 0;
-            $detailedBalance = [];
-            
-            foreach ($transactions as $transaction) {
-                $code = $transaction->paid_code;
-                $amount = $transaction->amount_paid;
-                
-                // Add to total balance
-                $totalBalance += $amount;
-                
-                // Add to detailed balance
-                if (!isset($detailedBalance[$code])) {
-                    $detailedBalance[$code] = 0;
-                }
-                $detailedBalance[$code] += $amount;
-            }
-            
-            // Update or create student balance record
-            DB::table('student_balance')->updateOrInsert(
-                ['mshs' => $mshs],
-                [
-                    'balance' => $totalBalance,
-                    'detail' => json_encode($detailedBalance),
-                    'updated_at' => now()
-                ]
-            );
-            
-            return true;
-        } catch (\Exception $e) {
-            Log::error("Error updating student balance: " . $e->getMessage());
-            return false;
         }
     }
     

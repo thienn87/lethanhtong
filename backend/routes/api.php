@@ -53,6 +53,7 @@ Route::post('/tuition-monthly-fee-listings/generate', [TuitionMonthlyFeeListingC
 //Cập nhật số dư đầu kỳ theo tháng "year_month:2025-04"
 Route::post('/tuition-fee-listings/import-dudau', [TuitionMonthlyFeeListingController::class, 'importDudauFromExcel']);
 Route::get('/tuition-fee-listings/by-mshs', [TuitionMonthlyFeeListingController::class, 'getByMshs']);
+Route::post('/tuition-monthly-fee-listings/calculate-dudau', [App\Http\Controllers\TuitionMonthlyFeeListingController::class, 'calculateDudau']);
 
 Route::prefix('payment')->group(function () {
     Route::post('/process', [PaymentController::class, 'processPayment']);
@@ -184,13 +185,8 @@ Route::prefix('transaction')->group(function () {
     
     /** Get : /api/transaction/outstanding-debt **/
     Route::get('/outstanding-debt', [TransactionController::class, 'outstandingDebt'])->name('transaction.outstandingDebt');
-    Route::post('/outstanding-debt/export-to-old-data', [TransactionController::class, 'exportOutstandingDebt'])->name('transaction.exportOutstandingDebt');
-    Route::get('/outstanding-debt/get-old-data', [TransactionController::class, 'getOldOutstandingDebt'])->name('transaction.getOldOutstandingDebt');
     // Route::post('/update-outstanding-debt-batch', [TransactionController::class, 'updateOutstandingDebtBatch']);
     // Route::get('/update-outstanding-debt-batch', [TransactionController::class, 'updateOutstandingDebtBatch']);
-    Route::get('/detailed-balance', [TransactionController::class, 'getDetailedBalance']);
-    Route::post('/update-student-balance', [TransactionController::class, 'updateStudentBalanceDetail']);
-    Route::post('/update-all-student-balances', [TransactionController::class, 'updateAllStudentBalances']);
     Route::get('/fee-data', [TransactionFeeController::class, 'getTransactionFeeData']);
     Route::get('/fix-sequence', [TransactionController::class, 'fixSequence']);
 

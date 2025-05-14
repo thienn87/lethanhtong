@@ -55,9 +55,7 @@ class StudentDebtController extends Controller
                     's.class as lop',
                     DB::raw("COALESCE((tmfl.dudau::jsonb->>'total')::numeric, 0) as du_cuoi_thang_truoc"),
                     DB::raw("COALESCE((tmfl.dathu::jsonb->>'total')::numeric, 0) as dathu"),
-                    DB::raw("COALESCE((tmfl.duno::jsonb->>'total')::numeric, 0) as du_cuoi_thang_nay"),
-                    DB::raw("(COALESCE((tmfl.dudau::jsonb->>'total')::numeric, 0) + 
-                            COALESCE((tmfl.duno::jsonb->>'total')::numeric, 0)) as tong_du_cuoi")
+                    DB::raw("COALESCE((tmfl.duno::jsonb->>'total')::numeric, 0) as du_cuoi_thang_nay")
                 )
                 ->where('tmfl.year_month', $yearMonth)
                 ->where('s.leave_school', 'false');
@@ -66,7 +64,7 @@ class StudentDebtController extends Controller
             if (!empty($keyword)) {
                 $query->where(function($q) use ($keyword) {
                     $q->where('s.mshs', 'like', "%{$keyword}%")
-                      ->orWhere('s.full_name', 'like', "%{$keyword}%");
+                    ->orWhere('s.full_name', 'like', "%{$keyword}%");
                 });
             }
             
@@ -88,8 +86,8 @@ class StudentDebtController extends Controller
             } else {
                 // Default sorting
                 $query->orderBy('s.grade', 'ASC')
-                      ->orderBy('s.class', 'ASC')
-                      ->orderBy('s.full_name', 'ASC');
+                    ->orderBy('s.class', 'ASC')
+                    ->orderBy('s.full_name', 'ASC');
             }
             
             // Check if export is requested
@@ -99,6 +97,51 @@ class StudentDebtController extends Controller
             
             // Apply pagination
             $students = $query->offset($offset)->limit($limit)->get();
+            
+            // Get the latest month's duno for each student
+            $latestDunoQuery = DB::table('tuition_monthly_fee_listings as t1')
+                ->join(DB::raw('(
+                    SELECT mshs, MAX(year_month) as latest_year_month
+                    FROM tuition_monthly_fee_listings
+                    GROUP BY mshs
+                ) as t2'), function($join) {
+                    $join->on('t1.mshs', '=', 't2.mshs')
+                        ->on('t1.year_month', '=', 't2.latest_year_month');
+                })
+                ->select(
+                    't1.mshs',
+                    DB::raw("COALESCE((t1.duno::jsonb->>'total')::numeric, 0) as latest_duno")
+                );
+                
+            // Apply the same filters to the latest duno query
+            if (!empty($keyword) || !empty($grade) || !empty($class)) {
+                $latestDunoQuery->join('students as s', 's.mshs', '=', 't1.mshs');
+                
+                if (!empty($keyword)) {
+                    $latestDunoQuery->where(function($q) use ($keyword) {
+                        $q->where('s.mshs', 'like', "%{$keyword}%")
+                        ->orWhere('s.full_name', 'like', "%{$keyword}%");
+                    });
+                }
+                
+                if (!empty($grade)) {
+                    $latestDunoQuery->where('s.grade', $grade);
+                }
+                
+                if (!empty($class)) {
+                    $latestDunoQuery->where('s.class', $class);
+                }
+                
+                $latestDunoQuery->where('s.leave_school', 'false');
+            }
+            
+            $latestDunoResults = $latestDunoQuery->get()->keyBy('mshs');
+            
+            // Add the latest duno to each student record
+            foreach ($students as $student) {
+                $latestDuno = $latestDunoResults->get($student->mshs);
+                $student->tong_du_cuoi = $latestDuno ? $latestDuno->latest_duno : 0;
+            }
             
             // Calculate totals
             $totals = [
@@ -114,9 +157,7 @@ class StudentDebtController extends Controller
                 ->select(
                     DB::raw("SUM(COALESCE((tmfl.dudau::jsonb->>'total')::numeric, 0)) as du_cuoi_thang_truoc"),
                     DB::raw("SUM(COALESCE((tmfl.dathu::jsonb->>'total')::numeric, 0)) as dathu"),
-                    DB::raw("SUM(COALESCE((tmfl.duno::jsonb->>'total')::numeric, 0)) as du_cuoi_thang_nay"),
-                    DB::raw("SUM(COALESCE((tmfl.dudau::jsonb->>'total')::numeric, 0) + 
-                            COALESCE((tmfl.duno::jsonb->>'total')::numeric, 0)) as tong_du_cuoi")
+                    DB::raw("SUM(COALESCE((tmfl.duno::jsonb->>'total')::numeric, 0)) as du_cuoi_thang_nay")
                 )
                 ->where('tmfl.year_month', $yearMonth)
                 ->where('s.leave_school', 'false');
@@ -125,7 +166,7 @@ class StudentDebtController extends Controller
             if (!empty($keyword)) {
                 $totalsQuery->where(function($q) use ($keyword) {
                     $q->where('s.mshs', 'like', "%{$keyword}%")
-                      ->orWhere('s.full_name', 'like', "%{$keyword}%");
+                    ->orWhere('s.full_name', 'like', "%{$keyword}%");
                 });
             }
             
@@ -143,9 +184,40 @@ class StudentDebtController extends Controller
                 $totals = [
                     'du_cuoi_thang_truoc' => $totalsResult->du_cuoi_thang_truoc ?? 0,
                     'dathu' => $totalsResult->dathu ?? 0,
-                    'du_cuoi_thang_nay' => $totalsResult->du_cuoi_thang_nay ?? 0,
-                    'tong_du_cuoi' => $totalsResult->tong_du_cuoi ?? 0
+                    'du_cuoi_thang_nay' => $totalsResult->du_cuoi_thang_nay ?? 0
                 ];
+                
+                // Calculate tong_du_cuoi as the sum of latest duno values
+                $latestDunoSum = DB::table('tuition_monthly_fee_listings as t1')
+                    ->join(DB::raw('(
+                        SELECT mshs, MAX(year_month) as latest_year_month
+                        FROM tuition_monthly_fee_listings
+                        GROUP BY mshs
+                    ) as t2'), function($join) {
+                        $join->on('t1.mshs', '=', 't2.mshs')
+                            ->on('t1.year_month', '=', 't2.latest_year_month');
+                    })
+                    ->join('students as s', 's.mshs', '=', 't1.mshs')
+                    ->where('s.leave_school', 'false');
+                    
+                // Apply the same filters to the latest duno sum query
+                if (!empty($keyword)) {
+                    $latestDunoSum->where(function($q) use ($keyword) {
+                        $q->where('s.mshs', 'like', "%{$keyword}%")
+                        ->orWhere('s.full_name', 'like', "%{$keyword}%");
+                    });
+                }
+                
+                if (!empty($grade)) {
+                    $latestDunoSum->where('s.grade', $grade);
+                }
+                
+                if (!empty($class)) {
+                    $latestDunoSum->where('s.class', $class);
+                }
+                
+                $latestDunoTotal = $latestDunoSum->sum(DB::raw("COALESCE((t1.duno::jsonb->>'total')::numeric, 0)"));
+                $totals['tong_du_cuoi'] = $latestDunoTotal;
             }
             
             return response()->json([

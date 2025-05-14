@@ -15,13 +15,10 @@ use PhpOffice\PhpSpreadsheet\Worksheet\PageSetup;
 use App\Repositories\InvoiceRepository;
 use App\Services\SearchService;
 use Carbon\Carbon;
-use App\Models\Student;
-use App\Models\TuitionGroup;
-use App\Services\OutstandingDebtService;
-
+use App\Services\TuitionMonthlyService;
 class InvoiceController extends Controller
 {   
-    private $outstandingDebtService;
+    protected $tuitionMonthlyService;
     private function ensureInvoicesPartitionExists($yearMonth)
     {
         $partitionName = 'invoices_' . str_replace('-', '_', $yearMonth);
@@ -34,9 +31,9 @@ class InvoiceController extends Controller
         }
     }
 
-    public function __construct(OutstandingDebtService $outstandingDebtService)
+    public function __construct(TuitionMonthlyService $tuitionMonthlyService)
     {
-        $this->outstandingDebtService = $outstandingDebtService;
+        $this->tuitionMonthlyService = $tuitionMonthlyService;
     }
     /**
      * Create a new invoice
@@ -103,14 +100,12 @@ class InvoiceController extends Controller
                 'updated_by' => auth()->id() ?? null,
             ]);
 
-            // Update student balance using the new method
-            $studentBalanceService = app()->make('App\Services\StudentBalanceService');
-            $balanceUpdated = $studentBalanceService->updateBalanceAfterInvoice(
+            // Update tuition monthly data
+            $balanceUpdated = $this->tuitionMonthlyService->updateTuitionMonthlyAfterInvoice(
                 $data['mshs'],
                 $data['transaction_data'],
-                $data['month'] ?? null
+                $$data['year_month']
             );
-
             if (!$balanceUpdated) {
                 Log::warning("Invoice created but student balance update failed for MSHS: {$data['mshs']}");
             }
@@ -128,22 +123,6 @@ class InvoiceController extends Controller
                 'message' => 'Failed to create invoice: ' . $e->getMessage()
             ], 500);
         }
-    }
-
-    /**
-     * Update student balance (internal method)
-     * 
-     * @deprecated Use StudentBalanceService instead
-     * @param string $mshs Student ID
-     * @param array $transactionData Transaction data including amount and tuition items
-     * @param int|null $month Month for which the transaction is being made (1-12)
-     * @return bool Whether the operation was successful
-     */
-    private function updateStudentBalance($mshs, $transactionData, $month = null)
-    {
-        // Use StudentBalanceService instead
-        $studentBalanceService = app()->make('App\Services\StudentBalanceService');
-        return $studentBalanceService->create($mshs, $transactionData, $month);
     }
 
     public function delete(Request $request)

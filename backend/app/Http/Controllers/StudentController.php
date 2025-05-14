@@ -271,8 +271,8 @@ class StudentController extends Controller
         }
         
         // Clear search caches - check if searchService exists and has clearCache method
-        if ($this->searchService && method_exists($this->searchService, 'clearCache')) {
-            $this->searchService->clearCache();
-        }
+        // if ($this->searchService && method_exists($this->searchService, 'clearCache')) {
+        //     $this->searchService->clearCache();
+        // }
     }
 }

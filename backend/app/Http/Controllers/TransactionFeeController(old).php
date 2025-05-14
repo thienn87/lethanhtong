@@ -5,7 +5,6 @@ namespace App\Http\Controllers;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Log;
 use App\Models\Student;
-use App\Services\OutstandingDebtService;
 use App\Services\TransactionService;
 use Illuminate\Support\Facades\DB;
 class TransactionFeeController extends Controller
@@ -13,9 +12,8 @@ class TransactionFeeController extends Controller
     protected $outstandingDebtService;
     protected $transactionService;
 
-    public function __construct(OutstandingDebtService $outstandingDebtService, TransactionService $transactionService)
+    public function __construct(TransactionService $transactionService)
     {
-        $this->outstandingDebtService = $outstandingDebtService;
         $this->transactionService = $transactionService;
     }
 

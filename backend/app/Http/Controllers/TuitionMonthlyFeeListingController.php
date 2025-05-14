@@ -962,4 +962,132 @@ class TuitionMonthlyFeeListingController extends Controller
     {
         //
     }
+    /**
+     * Calculate dudau based on year_month using current month data only
+     * and update previous month's duno (ducuoi) with the calculated dudau values
+     * 
+     * @param Request $request
+     * @return \Illuminate\Http\JsonResponse
+     */
+    public function calculateDudau(Request $request)
+    {
+        try {
+            $request->validate([
+                'year_month' => 'required|date_format:Y-m',
+            ]);
+
+            $yearMonth = $request->input('year_month');
+            
+            // Get all students from the current month's listings
+            $currentListings = TuitionMonthlyFeeListing::where('year_month', $yearMonth)
+                ->get();
+                    
+            if ($currentListings->isEmpty()) {
+                return response()->json([
+                    'status' => 'error',
+                    'message' => 'No tuition listings found for ' . $yearMonth
+                ], 404);
+            }
+            
+            // Calculate previous month's year_month
+            [$year, $month] = explode('-', $yearMonth);
+            $year = (int)$year;
+            $month = (int)$month;
+            
+            $prevMonth = $month - 1;
+            $prevYear = $year;
+            
+            if ($prevMonth < 1) {
+                $prevMonth = 12;
+                $prevYear = $year - 1;
+            }
+            
+            $prevYearMonth = sprintf('%04d-%02d', $prevYear, $prevMonth);
+            
+            // Get previous month's listings
+            $prevListings = TuitionMonthlyFeeListing::where('year_month', $prevYearMonth)
+                ->get()
+                ->keyBy('mshs');
+            
+            $updatedCount = 0;
+            $prevMonthUpdatedCount = 0;
+            $errors = [];
+            
+            foreach ($currentListings as $listing) {
+                try {
+                    // Get current ducuoi, phaithu and dathu
+                    $ducuoi = $listing->duno; // Using duno as ducuoi (final balance)
+                    $phaithu = $listing->phaithu;
+                    $dathu = $listing->dathu;
+                    
+                    // Ensure all arrays have proper structure
+                    $ducuoi = $this->ensureArrayStructure($ducuoi);
+                    $phaithu = $this->ensureArrayStructure($phaithu);
+                    $dathu = $this->ensureArrayStructure($dathu);
+                    
+                    // Calculate dudau = ducuoi + phaithu - dathu
+                    $dudau = ['total' => 0, 'details' => []];
+                    
+                    // Merge all possible keys from ducuoi, phaithu, and dathu
+                    $allKeys = array_unique(array_merge(
+                        array_keys($ducuoi['details'] ?? []),
+                        array_keys($phaithu['details'] ?? []),
+                        array_keys($dathu['details'] ?? [])
+                    ));
+                    
+                    // Calculate dudau for each key
+                    foreach ($allKeys as $code) {
+                        $ducuoiAmount = $ducuoi['details'][$code] ?? 0;
+                        $phaithuAmount = $phaithu['details'][$code] ?? 0;
+                        $dathuAmount = $dathu['details'][$code] ?? 0;
+                        
+                        $dudauAmount = $ducuoiAmount + $phaithuAmount - $dathuAmount;
+                        
+                        if ($dudauAmount != 0) { // Only include non-zero values
+                            $dudau['details'][$code] = $dudauAmount;
+                        }
+                    }
+                    
+                    // Calculate total
+                    $dudau['total'] = array_sum($dudau['details']);
+                    
+                    // Update the listing with new dudau
+                    $listing->dudau = $dudau;
+                    $listing->save();
+                    $updatedCount++;
+                    
+                    // Update previous month's duno (ducuoi) with the calculated dudau
+                    $prevListing = $prevListings->get($listing->mshs);
+                    if ($prevListing) {
+                        $prevListing->duno = $dudau;
+                        $prevListing->save();
+                        $prevMonthUpdatedCount++;
+                    }
+                    
+                } catch (\Exception $e) {
+                    $errors[] = [
+                        'mshs' => $listing->mshs,
+                        'error' => $e->getMessage()
+                    ];
+                    \Illuminate\Support\Facades\Log::error("Error calculating dudau for MSHS {$listing->mshs}: " . $e->getMessage(), ['exception' => $e]);
+                }
+            }
+            
+            return response()->json([
+                'status' => 'success',
+                'message' => "Updated dudau for {$updatedCount} records for {$yearMonth} and duno for {$prevMonthUpdatedCount} records for {$prevYearMonth}",
+                'updated_count' => $updatedCount,
+                'prev_month_updated_count' => $prevMonthUpdatedCount,
+                'errors' => $errors
+            ]);
+            
+        } catch (\Exception $e) {
+            \Illuminate\Support\Facades\Log::error("Error in calculateDudau: " . $e->getMessage(), ['exception' => $e]);
+            
+            return response()->json([
+                'status' => 'error',
+                'message' => 'Failed to calculate dudau: ' . $e->getMessage()
+            ], 500);
+        }
+    }
 }

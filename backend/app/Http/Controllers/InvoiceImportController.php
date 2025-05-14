@@ -8,17 +8,16 @@ use Illuminate\Support\Facades\Validator;
 use App\Models\Student;
 use App\Models\Transaction;
 use App\Models\Invoice;
-use App\Services\StudentBalanceService;
 use Carbon\Carbon;
 use Exception;
-
+use App\Services\TuitionMonthlyService;
 class InvoiceImportController extends Controller
 {
-    protected $studentBalanceService;
-
-    public function __construct(StudentBalanceService $studentBalanceService)
-    {
-        $this->studentBalanceService = $studentBalanceService;
+    protected $tuitionMonthlyService;
+        public function __construct(
+        TuitionMonthlyService $tuitionMonthlyService
+    ) {
+        $this->tuitionMonthlyService = $tuitionMonthlyService;
     }
 
     /**
@@ -146,9 +145,13 @@ class InvoiceImportController extends Controller
                             'year_month' => $yearMonth, // <-- Set partition key
                         ]);
                         
-                        // Update student balance using the updateBalanceAfterInvoice method
-                        // $this->studentBalanceService->updateBalanceAfterInvoice($mahs, $transactionData, $month);
-                        
+                        // Update tuition monthly data - balance update
+                        $this->tuitionMonthlyService->updateTuitionMonthlyAfterInvoice(
+                            $mahs,
+                            $transactionData,
+                            $yearMonth
+                        );
+                                    
                         $successCount++;
                         DB::commit();
                     } catch (Exception $e) {

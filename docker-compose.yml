@@ -1,7 +1,28 @@
 version: '3.8'
 
 services:
-
+  postgres:
+    image: postgres:17.4
+    container_name: postgres_db
+    environment:
+      POSTGRES_USER: root
+      POSTGRES_PASSWORD: 123
+      POSTGRES_DB: lethanhtong_db
+      POSTGRES_HOST_AUTH_METHOD: trust
+    ports:
+      - 5432:5432
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+      - ./postgresql-custom.conf:/etc/postgresql/postgresql.conf
+    command: postgres -c 'config_file=/etc/postgresql/postgresql.conf' -c 'listen_addresses=*'
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U root -d lethanhtong_db"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - app_network
   nodejs:
     image: node:22.2.0
     container_name: nodejs_sockets_app
@@ -77,28 +98,7 @@ services:
     networks:
       - app_network
 
-  postgres:
-    image: postgres:17.4
-    container_name: postgres_db
-    environment:
-      POSTGRES_USER: root
-      POSTGRES_PASSWORD: 123
-      POSTGRES_DB: lethanhtong_db
-      POSTGRES_HOST_AUTH_METHOD: trust
-    ports:
-      - 5432:5432
-    volumes:
-      - postgres_data:/var/lib/postgresql/data
-      - ./postgresql-custom.conf:/etc/postgresql/postgresql.conf
-    command: postgres -c 'config_file=/etc/postgresql/postgresql.conf' -c 'listen_addresses=*'
-    restart: unless-stopped
-    healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U root -d lethanhtong_db"]
-      interval: 10s
-      timeout: 5s
-      retries: 5
-    networks:
-      - app_network
+  
 
 networks:
   app_network:

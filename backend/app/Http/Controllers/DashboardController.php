@@ -26,10 +26,24 @@ class DashboardController extends Controller
             // Get total revenue (sum of all transactions)
             $totalRevenue = Transaction::sum('amount_paid');
             
+            $year = date('Y');
+            $month = date('m');
+            $year_month = $year ."-". $month;
+            
             // Get outstanding debt
-            $outstandingDebt = DB::table('student_balance')
-                ->where('balance', '>', 0)
-                ->sum('balance');
+            $outstandingDebts = DB::table('tuition_monthly_fee_listings')
+                ->where('year_month', '=', $year_month)
+                ->get();
+            // Calculate total outstanding debt by summing the "total" values from JSON data
+            $outstandingDebt = 0;
+            
+            foreach ($outstandingDebts as $debt) {
+                $debtData = json_decode($debt->duno, true);
+                
+                if (isset($debtData['total'])) {
+                    $outstandingDebt += $debtData['total'];
+                }
+            }
             
             // Get recent transactions (last 5)
             // Using a safer approach that doesn't rely on the relationship
