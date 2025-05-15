@@ -81,7 +81,7 @@ RUN crontab /etc/cron.d/laravel-scheduler
 RUN touch /var/log/cron.log
 
 # Add entrypoint script (copy only once)
-COPY docker-entrypoint.sh /usr/local/bin/
+COPY docker-entrypoint.sh /usr/local/bin/docker-entrypoint.sh
 RUN chmod +x /usr/local/bin/docker-entrypoint.sh
 
 # Set permissions
